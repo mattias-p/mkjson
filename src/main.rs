@@ -1,5 +1,6 @@
 use serde_json::Deserializer;
 use serde_json::Value;
+use std::num::ParseIntError;
 use std::process::ExitCode;
 use unicode_ident::is_xid_continue;
 use unicode_ident::is_xid_start;
@@ -19,7 +20,7 @@ enum OperatorAst {
 
 #[derive(Debug)]
 enum SegmentAst {
-    Index(String),
+    Index(u32),
     Identifier(String),
     Key(String),
 }
@@ -54,11 +55,18 @@ impl std::fmt::Display for ParseError {
 enum ParseErrorInner {
     Message(String),
     Json(serde_json::Error),
+    Int(ParseIntError),
 }
 
 impl From<String> for ParseErrorInner {
     fn from(message: String) -> Self {
         ParseErrorInner::Message(message)
+    }
+}
+
+impl From<ParseIntError> for ParseErrorInner {
+    fn from(error: ParseIntError) -> Self {
+        ParseErrorInner::Int(error)
     }
 }
 
@@ -72,12 +80,62 @@ impl std::fmt::Display for ParseErrorInner {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             ParseErrorInner::Message(message) => write!(f, "{}", message),
+            ParseErrorInner::Int(error) => write!(f, "{}", error),
             ParseErrorInner::Json(error) => write!(f, "{}", error),
         }
     }
 }
 
 type ParseResult<'a, T> = Result<(T, usize, &'a str), ParseError>;
+
+fn escape_string(s: &str) -> String {
+    let escaped = s.chars().flat_map(|c| {
+        if c == '\\' || c == '"' {
+            vec!['\\', c]
+        } else {
+            vec![c]
+        }
+    });
+    Some('"')
+        .into_iter()
+        .chain(escaped)
+        .chain(Some('"').into_iter())
+        .collect()
+}
+
+#[derive(Debug)]
+struct Assignment {
+    path: Vec<Segment>,
+    value: String,
+}
+
+impl From<AssignmentAst> for Assignment {
+    fn from(ast: AssignmentAst) -> Self {
+        let path = ast.path.into_iter().map(|segment| segment.into()).collect();
+        let value = if ast.operator == OperatorAst::Colon {
+            ast.value
+        } else {
+            escape_string(&ast.value)
+        };
+        Assignment { path, value }
+    }
+}
+
+#[derive(Debug)]
+enum Segment {
+    Index(u32),
+    Key(String),
+}
+
+impl From<SegmentAst> for Segment {
+    fn from(ast: SegmentAst) -> Self {
+        match ast {
+            SegmentAst::Index(index) => Segment::Index(index),
+            SegmentAst::Key(key) => Segment::Key(key),
+            SegmentAst::Identifier(identifier) => Segment::Key(escape_string(&identifier)),
+        }
+    }
+}
 
 fn main() -> ExitCode {
     let mut assignments = std::env::args();
@@ -98,7 +156,7 @@ fn main() -> ExitCode {
 fn transform<'a>(assignments: impl Iterator<Item = String>) -> Result<String, String> {
     let mut results = vec![];
     for assignment in assignments {
-        let (assignment, _, _) = parse_assignment(&assignment).map_err(|e| {
+        let assignment = parse(&assignment).map_err(|e| {
             format!(
                 "assignment \"{}\": {}",
                 assignment.escape_default(),
@@ -108,6 +166,10 @@ fn transform<'a>(assignments: impl Iterator<Item = String>) -> Result<String, St
         results.push(format!("{:?}", assignment));
     }
     Ok(results.join("\n"))
+}
+
+fn parse(input: &str) -> Result<Assignment, ParseError> {
+    Ok(parse_assignment(input)?.0.into())
 }
 
 fn parse_assignment(input: &str) -> ParseResult<'_, AssignmentAst> {
@@ -213,7 +275,7 @@ fn parse_segment(input: &str) -> ParseResult<'_, SegmentAst> {
         let (index, rest) = input.split_at(split_index);
         Ok((SegmentAst::Identifier(index.to_string()), split_index, rest))
     } else if input.starts_with('0') {
-        Ok((SegmentAst::Index("0".to_string()), 1, &input[1..]))
+        Ok((SegmentAst::Index(0), 1, &input[1..]))
     } else if input.starts_with(|ch: char| ch.is_ascii_digit()) {
         let split_index = input
             .char_indices()
@@ -221,7 +283,8 @@ fn parse_segment(input: &str) -> ParseResult<'_, SegmentAst> {
             .map(|(i, _)| i)
             .unwrap_or_else(|| input.len());
         let (index, rest) = input.split_at(split_index);
-        Ok((SegmentAst::Index(index.to_string()), split_index, rest))
+        let index = index.parse().map_err(|e| ParseError::new(0, e))?;
+        Ok((SegmentAst::Index(index), split_index, rest))
     } else if let Some(first) = input.chars().next() {
         Err(ParseError::new(
             0,
