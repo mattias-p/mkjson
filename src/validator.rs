@@ -1,6 +1,7 @@
 use crate::parser::Assignment;
 use crate::parser::Path;
 use crate::parser::Segment;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::hash_map::Entry;
@@ -9,7 +10,8 @@ use std::rc::Rc;
 pub fn validate(assignments: &[Assignment]) -> Result<(), String> {
     check_key_consistency(assignments)?;
     check_path_uniqueness(assignments)?;
-    check_node_types(assignments)
+    check_node_types(assignments)?;
+    check_array_completeness(assignments)
 }
 
 fn check_key_consistency(assignments: &[Assignment]) -> Result<(), String> {
@@ -107,6 +109,51 @@ fn check_node_types(assignments: &[Assignment]) -> Result<(), String> {
             };
 
             path = prefix;
+        }
+    }
+
+    Ok(())
+}
+
+fn check_array_completeness(assignments: &[Assignment]) -> Result<(), String> {
+    let mut arrays: HashMap<Rc<Path>, BTreeSet<u32>> = HashMap::new();
+
+    for assignment in assignments {
+        let mut path = assignment.path.clone();
+
+        while let Some((ref prefix, segment)) = path.split_last() {
+            match &*segment {
+                Segment::Index(index) => {
+                    arrays.entry(prefix.clone()).or_default().insert(*index);
+                }
+                Segment::Key(_) => {}
+            };
+            path = prefix.clone();
+        }
+    }
+
+    for (prefix, indices) in arrays {
+        let indices: Vec<_> = indices.into_iter().collect();
+
+        let first = *indices.first().expect("non-empty");
+
+        if first != 0 {
+            Err(format!(
+                "array at {} has index {} while lacking index 0",
+                prefix, first
+            ))?;
+        }
+
+        for pair in indices.windows(2) {
+            let [left, right] = pair else { unreachable!() };
+            if *left != right - 1 {
+                Err(format!(
+                    "array at {} has index {} while lacking index {}",
+                    prefix,
+                    right,
+                    left + 1
+                ))?;
+            }
         }
     }
 
