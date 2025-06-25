@@ -277,7 +277,7 @@ impl std::fmt::Display for Path {
                 }
             }
             aux(f, &prefix)?;
-            write!(f, "{}.", segment)
+            write!(f, "{}", segment)
         } else {
             write!(f, ".")
         }

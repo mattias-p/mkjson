@@ -5,6 +5,7 @@ use crate::parser::Path;
 use crate::parser::Segment;
 use crate::parser::parse;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
@@ -26,7 +27,8 @@ pub fn transform<'a>(assignments: impl Iterator<Item = String>) -> Result<String
 }
 
 pub fn check(assignments: &[Assignment]) -> Result<(), String> {
-    check_key_consistency(assignments)
+    check_key_consistency(assignments)?;
+    check_path_uniqueness(assignments)
 }
 
 fn check_key_consistency(assignments: &[Assignment]) -> Result<(), String> {
@@ -57,6 +59,17 @@ fn check_key_consistency(assignments: &[Assignment]) -> Result<(), String> {
             normalized_path = normalized_path
                 .prefix()
                 .expect("normalized_path should track given_path");
+        }
+    }
+    Ok(())
+}
+
+fn check_path_uniqueness(assignments: &[Assignment]) -> Result<(), String> {
+    let mut paths = HashSet::new();
+
+    for assignment in assignments {
+        if !paths.insert(assignment.path.clone()) {
+            Err(format!("multiple assignments to path {}", assignment.path))?;
         }
     }
     Ok(())
