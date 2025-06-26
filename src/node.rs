@@ -70,3 +70,33 @@ impl Node {
         }
     }
 }
+
+impl std::fmt::Display for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Node::Value(value) => write!(f, "{}", value),
+            Node::Array(array) => {
+                write!(f, "[")?;
+                let mut elements = array.values();
+                if let Some(first) = elements.next() {
+                    write!(f, "{}", first)?;
+                    for element in elements {
+                        write!(f, ",{}", element)?;
+                    }
+                }
+                write!(f, "]")
+            }
+            Node::Object(object) => {
+                write!(f, "{{")?;
+                let mut pairs = object.iter();
+                if let Some((first_key, first_value)) = pairs.next() {
+                    write!(f, "{}:{}", first_key, first_value)?;
+                    for (key, value) in pairs {
+                        write!(f, ",{}:{}", key, value)?;
+                    }
+                }
+                write!(f, "}}")
+            }
+        }
+    }
+}

@@ -25,5 +25,9 @@ pub fn transform<'a>(inputs: impl Iterator<Item = String>) -> Result<String, Str
 
     let tree = build_tree(assignments.into_iter());
 
-    Ok(format!("{:?}", tree))
+    if let Some(node) = tree {
+        Ok(format!("{}\n", node))
+    } else {
+        Ok("".to_string())
+    }
 }

@@ -2,6 +2,7 @@ use crate::parser::AssignmentAst;
 use crate::parser::OperatorAst;
 use crate::parser::SegmentAst;
 use std::cmp::Ordering;
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -86,17 +87,18 @@ impl Path {
     }
 
     pub fn split_first(&self) -> Option<(Segment, Rc<Path>)> {
-        let mut segments = vec![];
+        let mut segments = VecDeque::new();
         let mut path = self;
         while let Path::Append(prefix, segment) = path {
-            segments.push(segment);
+            segments.push_front(segment);
             path = prefix;
         }
-        match segments.split_first() {
+        match segments.pop_front() {
             None => None,
-            Some((first, rest)) => {
-                Some(((*first).clone(), rest.iter().cloned().cloned().collect()))
-            }
+            Some(first) => Some((
+                (*first).clone(),
+                segments.iter().cloned().cloned().collect(),
+            )),
         }
     }
 
