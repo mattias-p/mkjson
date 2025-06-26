@@ -1,6 +1,6 @@
-use crate::parser::Assignment;
-use crate::parser::Path;
-use crate::parser::Segment;
+use crate::assignment::Assignment;
+use crate::assignment::Path;
+use crate::assignment::Segment;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;

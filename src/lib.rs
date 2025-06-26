@@ -1,8 +1,15 @@
+pub mod assignment;
 pub mod parser;
 pub mod validator;
 
-use crate::parser::parse;
+use crate::assignment::Assignment;
+use crate::parser::ParseError;
+use crate::parser::parse_assignment;
 use crate::validator::validate;
+
+pub fn parse(input: &str) -> Result<Assignment, ParseError> {
+    Ok(parse_assignment(input)?.0.into())
+}
 
 pub fn transform<'a>(assignments: impl Iterator<Item = String>) -> Result<String, String> {
     let mut results = vec![];
