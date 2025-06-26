@@ -4,6 +4,8 @@ use crate::parser::SegmentAst;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::rc::Rc;
+use unicode_ident::is_xid_continue;
+use unicode_ident::is_xid_start;
 
 #[derive(Debug)]
 pub struct Assignment {
@@ -21,6 +23,10 @@ impl From<AssignmentAst> for Assignment {
         };
         Assignment { path, value }
     }
+}
+
+fn is_xid_string(s: &str) -> bool {
+    s.starts_with(is_xid_start) && s.chars().find(|c| !is_xid_continue(*c)).is_none()
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -42,7 +48,11 @@ impl std::fmt::Display for Segment {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Segment::Index(index) => write!(f, "{}", index),
-            Segment::Key(key) => write!(f, "{}", key),
+            Segment::Key(key) => {
+                let trimmed = &key[1..key.len() - 1];
+                let key = if is_xid_string(trimmed) { trimmed } else { key };
+                write!(f, "{}", key)
+            }
         }
     }
 }

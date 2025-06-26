@@ -139,7 +139,7 @@ fn check_array_completeness(assignments: &[Assignment]) -> Result<(), String> {
 
         if first != 0 {
             Err(format!(
-                "array at {} has index {} while lacking index 0",
+                "array at path {} has index {} but lacks index 0",
                 prefix, first
             ))?;
         }
@@ -148,7 +148,7 @@ fn check_array_completeness(assignments: &[Assignment]) -> Result<(), String> {
             let [left, right] = pair else { unreachable!() };
             if *left != right - 1 {
                 Err(format!(
-                    "array at {} has index {} while lacking index {}",
+                    "array at path {} has index {} but lacks index {}",
                     prefix,
                     right,
                     left + 1
