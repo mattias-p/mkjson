@@ -1,20 +1,52 @@
 use crate::assignment::Assignment;
 use crate::assignment::Path;
 use crate::assignment::Segment;
+use snafu::prelude::*;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
-pub fn validate(assignments: &[Assignment]) -> Result<(), String> {
+#[derive(Debug, Snafu)]
+pub enum ValidationError {
+    #[snafu(display(
+        "path {path} has equivalent but inconsistently escaped keys {key1} and {key2}"
+    ))]
+    InconsistentKeyEscaping {
+        path: Rc<Path>,
+        key1: Segment,
+        key2: Segment,
+    },
+
+    #[snafu(display("colliding assignments to path {path}"))]
+    CollidingAssignments { path: Rc<Path> },
+
+    #[snafu(display("path {path} referred to as both {kind1} and {kind2}"))]
+    InconsistentNodeKind {
+        path: Rc<Path>,
+        kind1: NodeKind,
+        kind2: NodeKind,
+    },
+
+    #[snafu(display("array at path {path} has index {index1} but lacks index {index2}",))]
+    IncompleteArray {
+        path: Rc<Path>,
+        index1: u32,
+        index2: u32,
+    },
+}
+
+type ValidationResult = Result<(), ValidationError>;
+
+pub fn validate(assignments: &[Assignment]) -> ValidationResult {
     check_key_consistency(assignments)?;
     check_path_uniqueness(assignments)?;
     check_node_types(assignments)?;
     check_array_completeness(assignments)
 }
 
-fn check_key_consistency(assignments: &[Assignment]) -> Result<(), String> {
+fn check_key_consistency(assignments: &[Assignment]) -> ValidationResult {
     let mut keys: HashMap<Rc<Path>, Segment> = HashMap::new();
     for assignment in assignments {
         let mut given_path = assignment.path.clone();
@@ -28,12 +60,11 @@ fn check_key_consistency(assignments: &[Assignment]) -> Result<(), String> {
                     }
                     Entry::Occupied(occupied) => {
                         if given_segment != *occupied.get() {
-                            Err(format!(
-                                "path {} has equivalent but inconsistently escaped keys {} and {}",
-                                given_prefix,
-                                occupied.get(),
-                                given_segment
-                            ))?;
+                            Err(ValidationError::InconsistentKeyEscaping {
+                                path: given_prefix.clone(),
+                                key1: occupied.get().clone(),
+                                key2: given_segment,
+                            })?;
                         }
                     }
                 }
@@ -47,65 +78,66 @@ fn check_key_consistency(assignments: &[Assignment]) -> Result<(), String> {
     Ok(())
 }
 
-fn check_path_uniqueness(assignments: &[Assignment]) -> Result<(), String> {
+fn check_path_uniqueness(assignments: &[Assignment]) -> ValidationResult {
     let mut paths = HashSet::new();
 
     for assignment in assignments {
         if !paths.insert(assignment.path.clone()) {
-            Err(format!("multiple assignments to path {}", assignment.path))?;
+            Err(ValidationError::CollidingAssignments {
+                path: assignment.path.clone(),
+            })?;
         }
     }
     Ok(())
 }
 
-fn check_node_types(assignments: &[Assignment]) -> Result<(), String> {
-    #[derive(Eq, PartialEq)]
-    enum Type {
-        Object,
-        Array,
-        Value,
-    }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NodeKind {
+    Object,
+    Array,
+    Value,
+}
 
-    impl std::fmt::Display for Type {
-        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            match self {
-                Type::Object => write!(f, "object"),
-                Type::Array => write!(f, "array"),
-                Type::Value => write!(f, "value"),
-            }
+impl std::fmt::Display for NodeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            NodeKind::Object => write!(f, "object"),
+            NodeKind::Array => write!(f, "array"),
+            NodeKind::Value => write!(f, "value"),
         }
     }
+}
 
-    let mut types: HashMap<Rc<Path>, Type> = HashMap::new();
+fn check_node_types(assignments: &[Assignment]) -> ValidationResult {
+    let mut types: HashMap<Rc<Path>, NodeKind> = HashMap::new();
 
     for assignment in assignments {
         let mut path = assignment.path.clone();
 
         match types.entry(path.clone()) {
-            Entry::Vacant(vacant) => vacant.insert(Type::Value),
-            Entry::Occupied(occupied) => Err(format!(
-                "path {} referred to as both {} and value",
-                path,
-                occupied.get()
-            ))?,
+            Entry::Vacant(vacant) => vacant.insert(NodeKind::Value),
+            Entry::Occupied(occupied) => Err(ValidationError::InconsistentNodeKind {
+                path: path.clone(),
+                kind1: *occupied.get(),
+                kind2: NodeKind::Value,
+            })?,
         };
 
         while let Some((prefix, segment)) = path.split_last() {
-            let typ = match segment {
-                Segment::Key(_) => Type::Object,
-                Segment::Index(_) => Type::Array,
+            let kind = match segment {
+                Segment::Key(_) => NodeKind::Object,
+                Segment::Index(_) => NodeKind::Array,
             };
             match types.entry(prefix.clone()) {
                 Entry::Vacant(vacant) => {
-                    vacant.insert(typ);
+                    vacant.insert(kind);
                 }
-                Entry::Occupied(occupied) if *occupied.get() == typ => {}
-                Entry::Occupied(occupied) => Err(format!(
-                    "path {} referred to as both {} and {}",
-                    prefix,
-                    occupied.get(),
-                    typ
-                ))?,
+                Entry::Occupied(occupied) if *occupied.get() == kind => {}
+                Entry::Occupied(occupied) => Err(ValidationError::InconsistentNodeKind {
+                    path: prefix.clone(),
+                    kind1: *occupied.get(),
+                    kind2: kind,
+                })?,
             };
 
             path = prefix;
@@ -115,7 +147,7 @@ fn check_node_types(assignments: &[Assignment]) -> Result<(), String> {
     Ok(())
 }
 
-fn check_array_completeness(assignments: &[Assignment]) -> Result<(), String> {
+fn check_array_completeness(assignments: &[Assignment]) -> ValidationResult {
     let mut arrays: HashMap<Rc<Path>, BTreeSet<u32>> = HashMap::new();
 
     for assignment in assignments {
@@ -138,21 +170,21 @@ fn check_array_completeness(assignments: &[Assignment]) -> Result<(), String> {
         let first = *indices.first().expect("non-empty");
 
         if first != 0 {
-            Err(format!(
-                "array at path {} has index {} but lacks index 0",
-                prefix, first
-            ))?;
+            Err(ValidationError::IncompleteArray {
+                path: prefix.clone(),
+                index1: first,
+                index2: 0,
+            })?;
         }
 
         for pair in indices.windows(2) {
             let [left, right] = pair else { unreachable!() };
             if *left != right - 1 {
-                Err(format!(
-                    "array at path {} has index {} but lacks index {}",
-                    prefix,
-                    right,
-                    left + 1
-                ))?;
+                Err(ValidationError::IncompleteArray {
+                    path: prefix.clone(),
+                    index1: *right,
+                    index2: left + 1,
+                })?;
             }
         }
     }
