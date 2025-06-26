@@ -1,6 +1,6 @@
 use serde_json::Deserializer;
 use serde_json::Value;
-use std::num::ParseIntError;
+use snafu::prelude::*;
 use unicode_ident::is_xid_continue;
 use unicode_ident::is_xid_start;
 
@@ -24,75 +24,53 @@ pub enum SegmentAst {
     Key(String),
 }
 
-#[derive(Debug)]
-pub struct ParseError {
-    pub pos: usize,
-    pub inner: ParseErrorInner,
+#[derive(Debug, Snafu)]
+pub enum ParseError {
+    #[snafu(display("position {pos}: unexpected character '{ch}'"))]
+    UnexpectedCharacter { pos: usize, ch: char },
+
+    #[snafu(display("unexpected end of string"))]
+    UnexpectedEndOfString,
+
+    #[snafu(display("position {pos}: invalid index"))]
+    InvalidIndex {
+        source: std::num::ParseIntError,
+        pos: usize,
+    },
+
+    #[snafu(display("position {pos}: invalid key"))]
+    InvalidKey {
+        source: serde_json::Error,
+        pos: usize,
+    },
+
+    #[snafu(display("position {pos}: invalid json value"))]
+    InvalidJsonValue {
+        source: serde_json::Error,
+        pos: usize,
+    },
 }
 
 impl ParseError {
-    pub fn new<I: Into<ParseErrorInner>>(pos: usize, inner: I) -> Self {
-        ParseError {
-            pos,
-            inner: inner.into(),
-        }
-    }
-
     fn offset(self, offset: usize) -> ParseError {
-        ParseError {
-            pos: self.pos + offset,
-            inner: self.inner,
-        }
-    }
-}
-
-impl std::error::Error for ParseError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match &self.inner {
-            ParseErrorInner::Message(_) => None,
-            ParseErrorInner::Json(e) => Some(e),
-            ParseErrorInner::Int(e) => Some(e),
-        }
-    }
-}
-
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "position {}: {}", self.pos, self.inner)
-    }
-}
-
-#[derive(Debug)]
-pub enum ParseErrorInner {
-    Message(String),
-    Json(serde_json::Error),
-    Int(ParseIntError),
-}
-
-impl From<String> for ParseErrorInner {
-    fn from(message: String) -> Self {
-        ParseErrorInner::Message(message)
-    }
-}
-
-impl From<ParseIntError> for ParseErrorInner {
-    fn from(error: ParseIntError) -> Self {
-        ParseErrorInner::Int(error)
-    }
-}
-
-impl From<serde_json::Error> for ParseErrorInner {
-    fn from(error: serde_json::Error) -> Self {
-        ParseErrorInner::Json(error)
-    }
-}
-
-impl std::fmt::Display for ParseErrorInner {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            ParseErrorInner::Message(message) => write!(f, "{}", message),
-            ParseErrorInner::Int(error) => write!(f, "{}", error),
-            ParseErrorInner::Json(error) => write!(f, "{}", error),
+            ParseError::UnexpectedCharacter { pos, ch } => ParseError::UnexpectedCharacter {
+                pos: pos + offset,
+                ch,
+            },
+            ParseError::UnexpectedEndOfString => ParseError::UnexpectedEndOfString,
+            ParseError::InvalidIndex { pos, source } => ParseError::InvalidIndex {
+                pos: pos + offset,
+                source,
+            },
+            ParseError::InvalidKey { pos, source } => ParseError::InvalidKey {
+                pos: pos + offset,
+                source,
+            },
+            ParseError::InvalidJsonValue { pos, source } => ParseError::InvalidJsonValue {
+                pos: pos + offset,
+                source,
+            },
         }
     }
 }
@@ -111,15 +89,15 @@ pub fn validate_json(pos: usize, input: &str) -> ParseResult<'_, ()> {
             // Check for non-whitespace garbage
             let rest = &input[offset..];
             if let Some((end_pos, ch)) = rest.char_indices().find(|&(_, c)| !c.is_whitespace()) {
-                Err(ParseError::new(
-                    pos + offset + end_pos,
-                    format!("unexpected character '{}'", ch),
-                ))?;
+                Err(ParseError::UnexpectedCharacter {
+                    pos: pos + offset + end_pos,
+                    ch,
+                })?;
             }
             Ok(((), pos + input.len(), ""))
         }
-        Some(Err(e)) => Err(ParseError::new(pos, e)),
-        None => Err(ParseError::new(pos, "unexpected end of string".to_string())),
+        Some(Err(e)) => Err(ParseError::InvalidJsonValue { pos, source: e }),
+        None => Err(ParseError::UnexpectedEndOfString),
     }
 }
 
@@ -189,13 +167,10 @@ pub fn parse_segment(input: &str) -> ParseResult<'_, SegmentAst> {
         if let Some(index) = split_index {
             let (segment, rest) = input.split_at(index);
             let _: serde_json::Value =
-                serde_json::from_str(segment).map_err(|e| ParseError::new(index, e))?;
+                serde_json::from_str(segment).context(InvalidKeySnafu { pos: index })?;
             Ok((SegmentAst::Key(segment.to_string()), index, rest))
         } else {
-            Err(ParseError::new(
-                input.len(),
-                "unexpected end of string".to_string(),
-            ))
+            Err(ParseError::UnexpectedEndOfString)
         }
     } else if input.starts_with(is_xid_start) {
         let split_index = input
@@ -214,15 +189,14 @@ pub fn parse_segment(input: &str) -> ParseResult<'_, SegmentAst> {
             .map(|(i, _)| i)
             .unwrap_or_else(|| input.len());
         let (index, rest) = input.split_at(split_index);
-        let index = index.parse().map_err(|e| ParseError::new(0, e))?;
+        let index = index
+            .parse()
+            .context(InvalidIndexSnafu { pos: split_index })?;
         Ok((SegmentAst::Index(index), split_index, rest))
     } else if let Some(first) = input.chars().next() {
-        Err(ParseError::new(
-            0,
-            format!("unexpected character '{}'", first),
-        ))
+        Err(ParseError::UnexpectedCharacter { pos: 0, ch: first })
     } else {
-        Err(ParseError::new(0, "unexpected end of string".to_string()))
+        Err(ParseError::UnexpectedEndOfString)
     }
 }
 
@@ -232,12 +206,9 @@ pub fn parse_operator(input: &str) -> ParseResult<OperatorAst> {
     } else if input.starts_with('=') {
         Ok((OperatorAst::EqualSign, 1, &input[1..]))
     } else if let Some(first) = input.chars().next() {
-        Err(ParseError::new(
-            0,
-            format!("unexpected character '{}'", first),
-        ))
+        Err(ParseError::UnexpectedCharacter { pos: 0, ch: first })
     } else {
-        Err(ParseError::new(0, "unexpected end of string".to_string()))
+        Err(ParseError::UnexpectedEndOfString)
     }
 }
 

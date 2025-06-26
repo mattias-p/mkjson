@@ -1,6 +1,5 @@
 use clap::Parser;
 use mkjson::node::Node;
-use mkjson::parser::ParseError;
 use mkjson::parser::is_xid_string;
 use mkjson::parser::validate_json;
 use mkjson::transform;
@@ -55,18 +54,18 @@ fn main() -> ExitCode {
     }
 }
 
-fn validate_method(input: &str) -> Result<String, ParseError> {
+fn validate_method(input: &str) -> Result<String, String> {
     if is_xid_string(input) {
         Ok(format!("\"{}\"", input))
     } else if input.starts_with('"') {
-        validate_json(1, input)?;
+        validate_json(1, input).map_err(|e| e.to_string())?;
         Ok(input.to_string())
     } else {
-        Err(ParseError::new(1, "must be a string".to_string()))
+        Err("must be a string".to_string())
     }
 }
 
-fn validate_id(input: &str) -> Result<String, ParseError> {
+fn validate_id(input: &str) -> Result<String, String> {
     if is_xid_string(input) {
         Ok(format!("\"{}\"", input))
     } else if input == ":null" {
@@ -74,12 +73,9 @@ fn validate_id(input: &str) -> Result<String, ParseError> {
     } else if input == ":omit" {
         Ok(":omit".to_string())
     } else if input.starts_with('"') || input.starts_with(|c: char| c.is_ascii_digit()) {
-        validate_json(1, input)?;
+        validate_json(1, input).map_err(|e| e.to_string())?;
         Ok(input.to_string())
     } else {
-        Err(ParseError::new(
-            1,
-            "must be a string, number, ':null' or ':omit'".to_string(),
-        ))
+        Err("must be a string, number, ':null' or ':omit'".to_string())
     }
 }
