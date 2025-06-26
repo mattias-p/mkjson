@@ -1,6 +1,7 @@
 use crate::parser::AssignmentAst;
 use crate::parser::OperatorAst;
 use crate::parser::SegmentAst;
+use std::cmp::Ordering;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -21,16 +22,16 @@ impl From<AssignmentAst> for Assignment {
     }
 }
 
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Segment {
     Index(u32),
-    Key(String),
+    Key(Rc<String>),
 }
 
 impl Segment {
-    pub fn normalize(self: &Rc<Self>) -> Rc<Segment> {
-        match &**self {
-            Segment::Key(key) => Rc::new(Segment::Key(unescape_string(key))),
+    pub fn unescape(&self) -> Segment {
+        match self {
+            Segment::Key(key) => Segment::Key(Rc::new(unescape_string(key))),
             _ => self.clone(),
         }
     }
@@ -49,16 +50,16 @@ impl From<SegmentAst> for Segment {
     fn from(ast: SegmentAst) -> Self {
         match ast {
             SegmentAst::Index(index) => Segment::Index(index),
-            SegmentAst::Key(key) => Segment::Key(key),
-            SegmentAst::Identifier(identifier) => Segment::Key(escape_string(&identifier)),
+            SegmentAst::Key(key) => Segment::Key(Rc::new(key)),
+            SegmentAst::Identifier(identifier) => Segment::Key(Rc::new(escape_string(&identifier))),
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq)]
 pub enum Path {
     Root,
-    Append(Rc<Path>, Rc<Segment>),
+    Append(Rc<Path>, Segment),
 }
 
 impl Path {
@@ -66,7 +67,7 @@ impl Path {
         Rc::new(Path::Root)
     }
 
-    pub fn append<T: Into<Rc<Segment>>>(self: &Rc<Self>, segment: T) -> Rc<Self> {
+    pub fn append<T: Into<Segment>>(self: &Rc<Self>, segment: T) -> Rc<Self> {
         Rc::new(Path::Append(self.clone(), segment.into()))
     }
 
@@ -77,17 +78,59 @@ impl Path {
         }
     }
 
-    pub fn split_last(&self) -> Option<(Rc<Path>, Rc<Segment>)> {
+    pub fn split_last(&self) -> Option<(Rc<Path>, Segment)> {
         match self {
             Path::Root => None,
             Path::Append(prefix, segment) => Some((prefix.clone(), segment.clone())),
         }
     }
 
-    pub fn normalize(self: &Rc<Self>) -> Rc<Self> {
+    pub fn split_first(&self) -> Option<(Segment, Rc<Path>)> {
+        let mut segments = vec![];
+        let mut path = self;
+        while let Path::Append(prefix, segment) = path {
+            segments.push(segment);
+            path = prefix;
+        }
+        match segments.split_first() {
+            None => None,
+            Some((first, rest)) => {
+                Some(((*first).clone(), rest.iter().cloned().cloned().collect()))
+            }
+        }
+    }
+
+    pub fn unescape(self: &Rc<Self>) -> Rc<Self> {
         match &**self {
             Path::Root => self.clone(),
-            Path::Append(prefix, key) => prefix.normalize().append(key.normalize()),
+            Path::Append(prefix, key) => prefix.unescape().append(key.unescape()),
+        }
+    }
+
+    pub fn iter(self: &Rc<Path>) -> impl Iterator<Item = (Rc<Path>, Segment)> {
+        PathIter { path: self.clone() }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Path::Root => 0,
+            Path::Append(prefix, _) => prefix.len() + 1,
+        }
+    }
+}
+
+impl PartialOrd for Path {
+    fn partial_cmp(&self, rhs: &Self) -> Option<std::cmp::Ordering> {
+        match (self, rhs) {
+            (Path::Root, Path::Root) => Some(Ordering::Equal),
+            (Path::Root, _) => Some(Ordering::Greater),
+            (_, Path::Root) => Some(Ordering::Less),
+            (Path::Append(lhs_prefix, lhs_segment), Path::Append(rhs_prefix, rhs_segment)) => {
+                match lhs_prefix.cmp(rhs_prefix) {
+                    Ordering::Equal => lhs_segment.partial_cmp(rhs_segment),
+                    ordering => Some(ordering),
+                }
+            }
         }
     }
 }
@@ -108,6 +151,25 @@ impl std::fmt::Display for Path {
             write!(f, "{}", segment)
         } else {
             write!(f, ".")
+        }
+    }
+}
+
+struct PathIter {
+    path: Rc<Path>,
+}
+
+impl Iterator for PathIter {
+    type Item = (Rc<Path>, Segment);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let path = self.path.clone();
+        match &*path {
+            Path::Root => None,
+            Path::Append(prefix, segment) => {
+                self.path = prefix.clone();
+                Some((prefix.clone(), segment.clone()))
+            }
         }
     }
 }

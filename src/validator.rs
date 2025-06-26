@@ -15,13 +15,13 @@ pub fn validate(assignments: &[Assignment]) -> Result<(), String> {
 }
 
 fn check_key_consistency(assignments: &[Assignment]) -> Result<(), String> {
-    let mut keys: HashMap<Rc<Path>, Rc<Segment>> = HashMap::new();
+    let mut keys: HashMap<Rc<Path>, Segment> = HashMap::new();
     for assignment in assignments {
         let mut given_path = assignment.path.clone();
-        let mut normalized_path = given_path.normalize();
+        let mut normalized_path = given_path.unescape();
 
         while let Some((given_prefix, given_segment)) = given_path.split_last() {
-            if let Segment::Key(_) = &*given_segment {
+            if let Segment::Key(_) = given_segment {
                 match keys.entry(normalized_path.clone()) {
                     Entry::Vacant(vacant) => {
                         vacant.insert(given_segment.clone());
@@ -91,7 +91,7 @@ fn check_node_types(assignments: &[Assignment]) -> Result<(), String> {
         };
 
         while let Some((prefix, segment)) = path.split_last() {
-            let typ = match &*segment {
+            let typ = match segment {
                 Segment::Key(_) => Type::Object,
                 Segment::Index(_) => Type::Array,
             };
@@ -122,9 +122,9 @@ fn check_array_completeness(assignments: &[Assignment]) -> Result<(), String> {
         let mut path = assignment.path.clone();
 
         while let Some((ref prefix, segment)) = path.split_last() {
-            match &*segment {
+            match segment {
                 Segment::Index(index) => {
-                    arrays.entry(prefix.clone()).or_default().insert(*index);
+                    arrays.entry(prefix.clone()).or_default().insert(index);
                 }
                 Segment::Key(_) => {}
             };
