@@ -7,27 +7,27 @@ use mkjson::transform;
 use std::process::ExitCode;
 use std::rc::Rc;
 
-/// Simple CLI tool
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+/// Construct JSON-RPC 2.0 from paths on the shell
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
 struct Args {
-    /// JSON-RPC identifier
-    #[arg(short, long, value_parser = validate_id)]
-    id: Option<String>,
+    /// "id" value
+    #[arg(short, long, default_value = ":omit", value_parser = validate_id)]
+    id: String,
 
-    /// JSON-RPC method
+    /// "method" value
     #[arg(short, long, value_parser = validate_method)]
     method: String,
 
-    /// JSON-RPC params assignments
-    #[arg()]
-    args: Vec<String>,
+    /// "params" builder expressions (e.g., a.b:true c.0.d=foobar)
+    #[arg(id = "ASSIGNMENT")]
+    assignments: Vec<String>,
 }
 
 fn main() -> ExitCode {
     let args = Args::parse();
 
-    match transform(args.args.into_iter()) {
+    match transform(args.assignments.into_iter()) {
         Ok(tree) => {
             let mut attributes = vec![
                 (
@@ -36,8 +36,8 @@ fn main() -> ExitCode {
                 ),
                 (Rc::new("\"method\"".to_string()), Node::Value(args.method)),
             ];
-            if let Some(id) = args.id {
-                attributes.push((Rc::new("\"id\"".to_string()), Node::Value(id)));
+            if args.id != ":omit" {
+                attributes.push((Rc::new("\"id\"".to_string()), Node::Value(args.id)));
             }
             if let Some(node) = tree {
                 attributes.push((Rc::new("\"params\"".to_string()), node));
@@ -71,13 +71,15 @@ fn validate_id(input: &str) -> Result<String, ParseError> {
         Ok(format!("\"{}\"", input))
     } else if input == ":null" {
         Ok("null".to_string())
-    } else if !input.starts_with('"') || input.starts_with(|c: char| c.is_ascii_digit()) {
+    } else if input == ":omit" {
+        Ok(":omit".to_string())
+    } else if input.starts_with('"') || input.starts_with(|c: char| c.is_ascii_digit()) {
         validate_json(1, input)?;
         Ok(input.to_string())
     } else {
         Err(ParseError::new(
             1,
-            "must be a string, number or null".to_string(),
+            "must be a string, number, ':null' or ':omit'".to_string(),
         ))
     }
 }
