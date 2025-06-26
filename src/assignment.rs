@@ -1,11 +1,10 @@
 use crate::parser::AssignmentAst;
 use crate::parser::OperatorAst;
 use crate::parser::SegmentAst;
+use crate::parser::is_xid_string;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::rc::Rc;
-use unicode_ident::is_xid_continue;
-use unicode_ident::is_xid_start;
 
 #[derive(Debug)]
 pub struct Assignment {
@@ -23,10 +22,6 @@ impl From<AssignmentAst> for Assignment {
         };
         Assignment { path, value }
     }
-}
-
-fn is_xid_string(s: &str) -> bool {
-    s.starts_with(is_xid_start) && s.chars().find(|c| !is_xid_continue(*c)).is_none()
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

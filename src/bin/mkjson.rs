@@ -1,4 +1,4 @@
-use jason::transform;
+use mkjson::transform;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -6,8 +6,10 @@ fn main() -> ExitCode {
     let _command = assignments.next();
 
     match transform(assignments) {
-        Ok(json) => {
-            println!("{}", json);
+        Ok(tree) => {
+            if let Some(node) = tree {
+                println!("{}\n", node);
+            }
             ExitCode::from(0)
         }
         Err(message) => {

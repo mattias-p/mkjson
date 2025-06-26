@@ -24,13 +24,14 @@ pub enum SegmentAst {
     Key(String),
 }
 
+#[derive(Debug)]
 pub struct ParseError {
     pub pos: usize,
     pub inner: ParseErrorInner,
 }
 
 impl ParseError {
-    fn new<I: Into<ParseErrorInner>>(pos: usize, inner: I) -> Self {
+    pub fn new<I: Into<ParseErrorInner>>(pos: usize, inner: I) -> Self {
         ParseError {
             pos,
             inner: inner.into(),
@@ -45,12 +46,23 @@ impl ParseError {
     }
 }
 
+impl std::error::Error for ParseError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match &self.inner {
+            ParseErrorInner::Message(_) => None,
+            ParseErrorInner::Json(e) => Some(e),
+            ParseErrorInner::Int(e) => Some(e),
+        }
+    }
+}
+
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "position {}: {}", self.pos, self.inner)
     }
 }
 
+#[derive(Debug)]
 pub enum ParseErrorInner {
     Message(String),
     Json(serde_json::Error),
@@ -87,32 +99,36 @@ impl std::fmt::Display for ParseErrorInner {
 
 type ParseResult<'a, T> = Result<(T, usize, &'a str), ParseError>;
 
+pub fn validate_json(pos: usize, input: &str) -> ParseResult<'_, ()> {
+    let de = Deserializer::from_str(input);
+    let mut stream = de.into_iter::<Value>();
+
+    match stream.next() {
+        Some(Ok(_value)) => {
+            // Position after the valid JSON
+            let offset = stream.byte_offset();
+
+            // Check for non-whitespace garbage
+            let rest = &input[offset..];
+            if let Some((end_pos, ch)) = rest.char_indices().find(|&(_, c)| !c.is_whitespace()) {
+                Err(ParseError::new(
+                    pos + offset + end_pos,
+                    format!("unexpected character '{}'", ch),
+                ))?;
+            }
+            Ok(((), pos + input.len(), ""))
+        }
+        Some(Err(e)) => Err(ParseError::new(pos, e)),
+        None => Err(ParseError::new(pos, "unexpected end of string".to_string())),
+    }
+}
+
 pub fn parse_assignment(input: &str) -> ParseResult<'_, AssignmentAst> {
     let (path, pos, input) = parse_path(input)?;
     let (operator, pos, input) = parse_operator(input).map_err(|e| e.offset(pos))?;
 
     if operator == OperatorAst::Colon {
-        let de = Deserializer::from_str(input);
-        let mut stream = de.into_iter::<Value>();
-
-        match stream.next() {
-            Some(Ok(_value)) => {
-                // Position after the valid JSON
-                let offset = stream.byte_offset();
-
-                // Check for non-whitespace garbage
-                let rest = &input[offset..];
-                if let Some((end_pod, ch)) = rest.char_indices().find(|&(_, c)| !c.is_whitespace())
-                {
-                    Err(ParseError::new(
-                        pos + offset + end_pod,
-                        format!("unexpected character '{}'", ch),
-                    ))?;
-                }
-            }
-            Some(Err(e)) => Err(ParseError::new(pos, e))?,
-            None => Err(ParseError::new(pos, "unexpected end of string".to_string()))?,
-        }
+        validate_json(pos, input)?;
     }
 
     Ok((
@@ -223,6 +239,10 @@ pub fn parse_operator(input: &str) -> ParseResult<OperatorAst> {
     } else {
         Err(ParseError::new(0, "unexpected end of string".to_string()))
     }
+}
+
+pub fn is_xid_string(s: &str) -> bool {
+    s.starts_with(is_xid_start) && s.chars().find(|c| !is_xid_continue(*c)).is_none()
 }
 
 // TESTS:
