@@ -25,7 +25,7 @@ pub enum SegmentAst {
 }
 
 #[derive(Debug, Snafu)]
-pub enum ParseError {
+pub enum SyntaxError {
     #[snafu(display("position {pos}: unexpected character '{ch}'"))]
     UnexpectedCharacter { pos: usize, ch: char },
 
@@ -34,50 +34,26 @@ pub enum ParseError {
 
     #[snafu(display("position {pos}: invalid index"))]
     InvalidIndex {
-        source: std::num::ParseIntError,
         pos: usize,
+        source: std::num::ParseIntError,
     },
 
     #[snafu(display("position {pos}: invalid key"))]
     InvalidKey {
-        source: serde_json::Error,
         pos: usize,
+        source: serde_json::Error,
     },
 
     #[snafu(display("position {pos}: invalid json value"))]
     InvalidJsonValue {
+        pos: usize, // TODO: remove this once we can have origin-aware JSON parsing errors
         source: serde_json::Error,
-        pos: usize,
     },
 }
 
-impl ParseError {
-    fn offset(self, offset: usize) -> ParseError {
-        match self {
-            ParseError::UnexpectedCharacter { pos, ch } => ParseError::UnexpectedCharacter {
-                pos: pos + offset,
-                ch,
-            },
-            ParseError::UnexpectedEndOfString => ParseError::UnexpectedEndOfString,
-            ParseError::InvalidIndex { pos, source } => ParseError::InvalidIndex {
-                pos: pos + offset,
-                source,
-            },
-            ParseError::InvalidKey { pos, source } => ParseError::InvalidKey {
-                pos: pos + offset,
-                source,
-            },
-            ParseError::InvalidJsonValue { pos, source } => ParseError::InvalidJsonValue {
-                pos: pos + offset,
-                source,
-            },
-        }
-    }
-}
+type ParseResult<'a, T> = Result<(T, usize, &'a str), SyntaxError>;
 
-type ParseResult<'a, T> = Result<(T, usize, &'a str), ParseError>;
-
-pub fn validate_json(pos: usize, input: &str) -> ParseResult<'_, ()> {
+pub fn validate_json(start_pos: usize, input: &str) -> ParseResult<'_, ()> {
     let de = Deserializer::from_str(input);
     let mut stream = de.into_iter::<Value>();
 
@@ -88,22 +64,25 @@ pub fn validate_json(pos: usize, input: &str) -> ParseResult<'_, ()> {
 
             // Check for non-whitespace garbage
             let rest = &input[offset..];
-            if let Some((end_pos, ch)) = rest.char_indices().find(|&(_, c)| !c.is_whitespace()) {
-                Err(ParseError::UnexpectedCharacter {
-                    pos: pos + offset + end_pos,
+            if let Some((end_index, ch)) = rest.char_indices().find(|&(_, c)| !c.is_whitespace()) {
+                Err(SyntaxError::UnexpectedCharacter {
+                    pos: start_pos + offset + end_index,
                     ch,
                 })?;
             }
-            Ok(((), pos + input.len(), ""))
+            Ok(((), start_pos + input.len(), ""))
         }
-        Some(Err(e)) => Err(ParseError::InvalidJsonValue { pos, source: e }),
-        None => Err(ParseError::UnexpectedEndOfString),
+        Some(Err(e)) => Err(SyntaxError::InvalidJsonValue {
+            pos: start_pos,
+            source: e,
+        }),
+        None => Err(SyntaxError::UnexpectedEndOfString),
     }
 }
 
-pub fn parse_assignment(input: &str) -> ParseResult<'_, AssignmentAst> {
-    let (path, pos, input) = parse_path(input)?;
-    let (operator, pos, input) = parse_operator(input).map_err(|e| e.offset(pos))?;
+pub fn parse_assignment(start_pos: usize, input: &str) -> ParseResult<'_, AssignmentAst> {
+    let (path, pos, input) = parse_path(start_pos, input)?;
+    let (operator, pos, input) = parse_operator(pos, input)?;
 
     if operator == OperatorAst::Colon {
         validate_json(pos, input)?;
@@ -115,33 +94,31 @@ pub fn parse_assignment(input: &str) -> ParseResult<'_, AssignmentAst> {
             operator,
             value: input.to_string(),
         },
-        0,
+        start_pos + input.len(),
         "",
     ))
 }
 
-pub fn parse_path(input: &str) -> ParseResult<'_, Vec<SegmentAst>> {
+pub fn parse_path(start_pos: usize, input: &str) -> ParseResult<'_, Vec<SegmentAst>> {
     if input.starts_with('.') {
-        Ok((vec![], 1, &input[1..]))
+        Ok((vec![], start_pos + 1, &input[1..]))
     } else {
         let mut segments = vec![];
 
-        let (first, mut pos, mut input) = parse_segment(input)?;
+        let (first, mut pos, mut input) = parse_segment(start_pos, input)?;
         segments.push(first);
 
         while input.starts_with('.') {
             let segment;
-            let offset;
-            (segment, offset, input) = parse_segment(&input[1..]).map_err(|e| e.offset(pos))?;
+            (segment, pos, input) = parse_segment(pos + 1, &input[1..])?;
             segments.push(segment);
-            pos += offset;
         }
 
         Ok((segments, pos, input))
     }
 }
 
-pub fn parse_segment(input: &str) -> ParseResult<'_, SegmentAst> {
+pub fn parse_segment(start_pos: usize, input: &str) -> ParseResult<'_, SegmentAst> {
     if input.starts_with('"') {
         #[derive(Eq, PartialEq)]
         enum State {
@@ -164,13 +141,18 @@ pub fn parse_segment(input: &str) -> ParseResult<'_, SegmentAst> {
                 }
             })
             .map(|(i, _)| i + 1);
-        if let Some(index) = split_index {
-            let (segment, rest) = input.split_at(index);
-            let _: serde_json::Value =
-                serde_json::from_str(segment).context(InvalidKeySnafu { pos: index })?;
-            Ok((SegmentAst::Key(segment.to_string()), index, rest))
+        if let Some(split_index) = split_index {
+            let (segment, rest) = input.split_at(split_index);
+            let _: serde_json::Value = serde_json::from_str(segment).context(InvalidKeySnafu {
+                pos: start_pos + split_index,
+            })?;
+            Ok((
+                SegmentAst::Key(segment.to_string()),
+                start_pos + split_index,
+                rest,
+            ))
         } else {
-            Err(ParseError::UnexpectedEndOfString)
+            Err(SyntaxError::UnexpectedEndOfString)
         }
     } else if input.starts_with(is_xid_start) {
         let split_index = input
@@ -179,9 +161,13 @@ pub fn parse_segment(input: &str) -> ParseResult<'_, SegmentAst> {
             .map(|(i, _)| i)
             .unwrap_or_else(|| input.len());
         let (index, rest) = input.split_at(split_index);
-        Ok((SegmentAst::Identifier(index.to_string()), split_index, rest))
+        Ok((
+            SegmentAst::Identifier(index.to_string()),
+            start_pos + split_index,
+            rest,
+        ))
     } else if input.starts_with('0') {
-        Ok((SegmentAst::Index(0), 1, &input[1..]))
+        Ok((SegmentAst::Index(0), start_pos + 1, &input[1..]))
     } else if input.starts_with(|ch: char| ch.is_ascii_digit()) {
         let split_index = input
             .char_indices()
@@ -189,26 +175,29 @@ pub fn parse_segment(input: &str) -> ParseResult<'_, SegmentAst> {
             .map(|(i, _)| i)
             .unwrap_or_else(|| input.len());
         let (index, rest) = input.split_at(split_index);
-        let index = index
-            .parse()
-            .context(InvalidIndexSnafu { pos: split_index })?;
-        Ok((SegmentAst::Index(index), split_index, rest))
+        let index = index.parse().context(InvalidIndexSnafu {
+            pos: start_pos + split_index,
+        })?;
+        Ok((SegmentAst::Index(index), start_pos + split_index, rest))
     } else if let Some(first) = input.chars().next() {
-        Err(ParseError::UnexpectedCharacter { pos: 0, ch: first })
+        Err(SyntaxError::UnexpectedCharacter {
+            pos: start_pos,
+            ch: first,
+        })
     } else {
-        Err(ParseError::UnexpectedEndOfString)
+        Err(SyntaxError::UnexpectedEndOfString)
     }
 }
 
-pub fn parse_operator(input: &str) -> ParseResult<OperatorAst> {
+pub fn parse_operator(pos: usize, input: &str) -> ParseResult<OperatorAst> {
     if input.starts_with(':') {
-        Ok((OperatorAst::Colon, 1, &input[1..]))
+        Ok((OperatorAst::Colon, pos + 1, &input[1..]))
     } else if input.starts_with('=') {
-        Ok((OperatorAst::EqualSign, 1, &input[1..]))
+        Ok((OperatorAst::EqualSign, pos + 1, &input[1..]))
     } else if let Some(first) = input.chars().next() {
-        Err(ParseError::UnexpectedCharacter { pos: 0, ch: first })
+        Err(SyntaxError::UnexpectedCharacter { pos, ch: first })
     } else {
-        Err(ParseError::UnexpectedEndOfString)
+        Err(SyntaxError::UnexpectedEndOfString)
     }
 }
 

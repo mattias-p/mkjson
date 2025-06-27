@@ -1,5 +1,5 @@
 use clap::Parser;
-use mkjson::transform;
+use mkjson::compiler::compile;
 use std::process::ExitCode;
 
 /// Construct JSON from paths on the shell
@@ -14,7 +14,7 @@ struct Args {
 fn main() -> ExitCode {
     let args = Args::parse();
 
-    match transform(args.assignments.into_iter()) {
+    match compile(args.assignments.into_iter()) {
         Ok(tree) => {
             if let Some(node) = tree {
                 println!("{}", node);

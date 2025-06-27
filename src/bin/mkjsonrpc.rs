@@ -1,8 +1,8 @@
 use clap::Parser;
+use mkjson::compiler::compile;
 use mkjson::node::Node;
 use mkjson::parser::is_xid_string;
 use mkjson::parser::validate_json;
-use mkjson::transform;
 use std::process::ExitCode;
 use std::rc::Rc;
 
@@ -26,7 +26,7 @@ struct Args {
 fn main() -> ExitCode {
     let args = Args::parse();
 
-    match transform(args.assignments.into_iter()) {
+    match compile(args.assignments.into_iter()) {
         Ok(tree) => {
             let mut attributes = vec![
                 (
