@@ -524,8 +524,35 @@ mod tests {
 
             #[test]
             fn test_objects() {
-                expect_path_error!(["foo=x", "foo=y"], "foo", CollidingAssignments);
-                expect_path_error!(["foo=x", r#""foo"=y"#], "foo", CollidingAssignments);
+                expect_path_error!(["a:42", "a:42"], "a", CollidingAssignments);
+                expect_path_error!(["a:42", r#""a":42"#], "a", CollidingAssignments);
+            }
+
+            #[test]
+            fn test_path_escaping_consistency() {
+                expect_path_error!(
+                    ["a:42", r#""\u0061":42"#],
+                    ".",
+                    InconsistentKeyEscaping { .. } // FIXME: check the keys too
+                );
+
+                // LATIN SMALL LETTER A WITH DIAERESIS
+                expect_json!(
+                    [
+                        "a\u{308}:42", // NFD and NFKD
+                        "\u{e4}:42",   // NFC and NFKC
+                    ],
+                    "{\"a\u{308}\":42,\"\u{e4}\":42}"
+                );
+
+                // LATIN SMALL LIGATURE FI + COMBINING ACUTE ACCENT
+                expect_json!(
+                    [
+                        "fi\u{301}:42",       // NFKC and NFKD
+                        "\u{fb01}\u{301}:42", // NFC and NFD
+                    ],
+                    "{\"fi\u{301}\":42,\"\u{fb01}\u{301}\":42}"
+                );
             }
 
             #[test]
