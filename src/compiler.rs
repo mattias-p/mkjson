@@ -2,7 +2,7 @@ use crate::node::Node;
 use crate::node::build_tree;
 use crate::parser::SyntaxError;
 use crate::parser::parse_assignment;
-use crate::validator::SemanticError;
+use crate::validator::PathError;
 use crate::validator::validate;
 use snafu::prelude::*;
 
@@ -15,7 +15,7 @@ pub enum CompileError {
     },
 
     #[snafu(display("validating: {source}"))]
-    Semantic { source: SemanticError },
+    Path { source: PathError },
 }
 
 type CompileResult<T> = Result<T, CompileError>;
@@ -29,7 +29,7 @@ pub fn compile<'a>(inputs: impl Iterator<Item = String>) -> CompileResult<Option
         assignments.push(ast.into());
     }
 
-    validate(assignments.as_slice()).context(SemanticSnafu)?;
+    validate(assignments.as_slice()).context(PathSnafu)?;
 
     Ok(build_tree(assignments.into_iter()))
 }
@@ -41,6 +41,7 @@ mod tests {
     use crate::parser::SyntaxError::*;
     use crate::parser::parse_path;
     use crate::validator::NodeKind;
+    use crate::validator::PathErrorVariant::*;
     use assert_matches::assert_matches;
     use std::rc::Rc;
 
@@ -58,6 +59,21 @@ mod tests {
                     source: $expected,
                     ..
                 })
+            );
+        };
+    }
+
+    macro_rules! expect_path_error {
+        ($input:expr, $path:expr, $expected:pat_param) => {
+            assert_matches!(
+                check(&$input),
+                Err(CompileError::Path {
+                    source: PathError {
+                        path,
+                        variant: $expected,
+                    },
+                })
+                if path == new_path($path)
             );
         };
     }
@@ -149,26 +165,25 @@ mod tests {
             use super::*;
 
             #[test]
-            fn test_root() {
+            fn test_root_assignment() {
                 expect_json!([".:42"], "42");
             }
 
             #[test]
-            fn test_nested_keys() {
+            fn test_object_keys() {
                 expect_json!(["foo:42"], r#"{"foo":42}"#);
-                expect_json!(["foo.bar:42"], r#"{"foo":{"bar":42}}"#);
                 expect_json!(["foo.bar.baz:42"], r#"{"foo":{"bar":{"baz":42}}}"#);
             }
 
             #[test]
-            fn test_nested_indices() {
+            fn test_array_indices() {
                 expect_json!(["0:42"], "[42]");
                 expect_json!(["0.0:42"], "[[42]]");
                 expect_json!(["0.0.0:42"], "[[[42]]]");
             }
 
             #[test]
-            fn test_nested_mixed_segments() {
+            fn test_mixed_segments() {
                 expect_json!(["foo.0:42"], r#"{"foo":[42]}"#);
                 expect_json!(["0.foo:42"], r#"[{"foo":42}]"#);
             }
@@ -182,7 +197,7 @@ mod tests {
             }
         }
 
-        mod json_values {
+        mod values {
             use super::*;
 
             #[test]
@@ -504,145 +519,122 @@ mod tests {
 
             #[test]
             fn test_colliding_root_assignment() {
-                assert_matches!(
-                    check(&[".:42", ".:43"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::CollidingAssignments { path },
-                        ..
-                    })
-                    if path == new_path(".")
-                );
+                expect_path_error!([".:42", ".:43"], ".", CollidingAssignments);
             }
 
             #[test]
             fn test_objects() {
-                assert_matches!(
-                    check(&["foo=x", "foo=y"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::CollidingAssignments { path },
-                        ..
-                    })
-                    if path == new_path("foo")
-                );
-                assert_matches!(
-                    check(&["foo=x", r#""foo"=y"#]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::CollidingAssignments { path },
-                        ..
-                    })
-                    if path == new_path("foo")
-                );
+                expect_path_error!(["foo=x", "foo=y"], "foo", CollidingAssignments);
+                expect_path_error!(["foo=x", r#""foo"=y"#], "foo", CollidingAssignments);
             }
 
             #[test]
             fn test_arrays() {
-                assert_matches!(
-                    check(&["0:42", "0:43"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::CollidingAssignments { path },
-                        ..
-                    })
-                    if path == new_path("0")
-                );
+                expect_path_error!(["0:42", "0:43"], "0", CollidingAssignments);
             }
 
             #[test]
             fn test_inconsistent_structure() {
-                assert_matches!(
-                    check(&["foo.0=x", "foo.bar=y"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::InconsistentNodeKind {
-                            path,
-                            kind1: NodeKind::Array,
-                            kind2: NodeKind::Object,
-                        },
-                        ..
-                    })
-                    if path == new_path("foo")
+                expect_path_error!(
+                    ["foo.0=x", "foo.bar=y"],
+                    "foo",
+                    InconsistentNodeKind {
+                        kind1: NodeKind::Array,
+                        kind2: NodeKind::Object,
+                    }
                 );
-                assert_matches!(
-                    check(&["foo.bar=x", "foo.0=y"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::InconsistentNodeKind {
-                            path,
-                            kind1: NodeKind::Object,
-                            kind2: NodeKind::Array,
-                        },
-                        ..
-                    })
-                    if path == new_path("foo")
+                expect_path_error!(
+                    ["foo.bar=x", "foo.0=y"],
+                    "foo",
+                    InconsistentNodeKind {
+                        kind1: NodeKind::Object,
+                        kind2: NodeKind::Array,
+                    }
                 );
-                assert_matches!(
-                    check(&["0=x", "foo=y"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::InconsistentNodeKind {
-                            path,
-                            kind1: NodeKind::Array,
-                            kind2: NodeKind::Object,
-                        },
-                        ..
-                    })
-                    if path == new_path(".")
+                expect_path_error!(
+                    ["0=x", "foo=y"],
+                    ".",
+                    InconsistentNodeKind {
+                        kind1: NodeKind::Array,
+                        kind2: NodeKind::Object,
+                    }
                 );
-                assert_matches!(
-                    check(&["foo=x", "0=y"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::InconsistentNodeKind {
-                            kind1: NodeKind::Object,
-                            kind2: NodeKind::Array,
-                            ..
-                        },
-                        ..
-                    })
+                expect_path_error!(
+                    ["foo=x", "0=y"],
+                    ".",
+                    InconsistentNodeKind {
+                        kind1: NodeKind::Object,
+                        kind2: NodeKind::Array,
+                    }
                 );
 
-                assert_matches!(
-                    check(&[".={}", "a=x"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::InconsistentNodeKind {
-                            path,
-                            kind1: NodeKind::Value,
-                            kind2: NodeKind::Object,
-                        },
-                        ..
-                    })
-                    if path == new_path(".")
+                expect_path_error!(
+                    [".={}", "a=x"],
+                    ".",
+                    InconsistentNodeKind {
+                        kind1: NodeKind::Value,
+                        kind2: NodeKind::Object,
+                    }
                 );
-                assert_matches!(
-                    check(&["a=x", ".={}"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::InconsistentNodeKind {
-                            path,
-                            kind1: NodeKind::Object,
-                            kind2: NodeKind::Value,
-                        },
-                        ..
-                    })
-                    if path == new_path(".")
+                expect_path_error!(
+                    ["a=x", ".={}"],
+                    ".",
+                    InconsistentNodeKind {
+                        kind1: NodeKind::Object,
+                        kind2: NodeKind::Value,
+                    }
                 );
-                assert_matches!(
-                    check(&[".=[]", "0=x"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::InconsistentNodeKind {
-                            path,
-                            kind1: NodeKind::Value,
-                            kind2: NodeKind::Array,
-                        },
-                        ..
-                    })
-                    if path == new_path(".")
+                expect_path_error!(
+                    [".=[]", "0=x"],
+                    ".",
+                    InconsistentNodeKind {
+                        kind1: NodeKind::Value,
+                        kind2: NodeKind::Array,
+                    }
                 );
-                assert_matches!(
-                    check(&["0=x", ".=[]"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::InconsistentNodeKind {
-                            path,
-                            kind1: NodeKind::Array,
-                            kind2: NodeKind::Value,
-                        },
-                        ..
-                    })
-                    if path == new_path(".")
+                expect_path_error!(
+                    ["0=x", ".=[]"],
+                    ".",
+                    InconsistentNodeKind {
+                        kind1: NodeKind::Array,
+                        kind2: NodeKind::Value,
+                    }
+                );
+            }
+
+            #[test]
+            fn test_array_completeness() {
+                expect_path_error!(
+                    ["1=x"],
+                    ".",
+                    IncompleteArray {
+                        index_seen: 1,
+                        index_missing: 0,
+                    }
+                );
+                expect_path_error!(
+                    ["foo.2=x"],
+                    "foo",
+                    IncompleteArray {
+                        index_seen: 2,
+                        index_missing: 0,
+                    }
+                );
+                expect_path_error!(
+                    ["foo.0=x", "foo.2=y"],
+                    "foo",
+                    IncompleteArray {
+                        index_seen: 2,
+                        index_missing: 1,
+                    }
+                );
+                expect_path_error!(
+                    ["2=x"],
+                    ".",
+                    IncompleteArray {
+                        index_seen: 2,
+                        index_missing: 0,
+                    }
                 );
             }
         }
@@ -668,43 +660,6 @@ mod tests {
             fn test_arrays() {
                 expect_json!(["0:42", "1:true"], r#"[42,true]"#);
                 expect_json!(["1.0:42", "1.1:true", "0:{}"], r#"[{},[42,true]]"#);
-
-                assert_matches!(
-                    check(&["foo.2=x"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::IncompleteArray {
-                            path,
-                            index_seen: 2,
-                            index_missing: 0,
-                        },
-                        ..
-                    })
-                    if path == new_path("foo")
-                );
-                assert_matches!(
-                    check(&["foo.0=x", "foo.2=y"]),
-                    Err(CompileError::Semantic {
-                        source: SemanticError::IncompleteArray {
-                            path,
-                            index_seen: 2,
-                            index_missing: 1,
-                        },
-                        ..
-                    })
-                    if path == new_path("foo")
-                );
-                assert_matches!(
-                check(&["2=x"]),
-                Err(CompileError::Semantic {
-                    source: SemanticError::IncompleteArray {
-                        path,
-                        index_seen: 2,
-                        index_missing: 0,
-                    },
-                    ..
-                })
-                if path == new_path(".")
-                );
             }
         }
 

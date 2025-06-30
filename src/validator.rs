@@ -9,37 +9,28 @@ use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
 #[derive(Debug, Snafu)]
-pub enum SemanticError {
-    #[snafu(display(
-        "path {path} has equivalent but inconsistently escaped keys {key1} and {key2}"
-    ))]
-    InconsistentKeyEscaping {
-        path: Rc<Path>,
-        key1: Segment,
-        key2: Segment,
-    },
-
-    #[snafu(display("colliding assignments to path {path}"))]
-    CollidingAssignments { path: Rc<Path> },
-
-    #[snafu(display("path {path} referred to as both {kind1} and {kind2}"))]
-    InconsistentNodeKind {
-        path: Rc<Path>,
-        kind1: NodeKind,
-        kind2: NodeKind,
-    },
-
-    #[snafu(display(
-        "array at path {path} has index {index_seen} but lacks index {index_missing}",
-    ))]
-    IncompleteArray {
-        path: Rc<Path>,
-        index_seen: u32,
-        index_missing: u32,
-    },
+#[snafu(display("path {path}: {variant}"))]
+pub struct PathError {
+    pub path: Rc<Path>,
+    pub variant: PathErrorVariant,
 }
 
-type ValidationResult = Result<(), SemanticError>;
+#[derive(Debug, Snafu)]
+pub enum PathErrorVariant {
+    #[snafu(display("path has equivalent but inconsistently escaped keys {key1} and {key2}"))]
+    InconsistentKeyEscaping { key1: Segment, key2: Segment },
+
+    #[snafu(display("colliding assignments to path"))]
+    CollidingAssignments,
+
+    #[snafu(display("path referred to as both {kind1} and {kind2}"))]
+    InconsistentNodeKind { kind1: NodeKind, kind2: NodeKind },
+
+    #[snafu(display("array at path has index {index_seen} but lacks index {index_missing}",))]
+    IncompleteArray { index_seen: u32, index_missing: u32 },
+}
+
+type ValidationResult = Result<(), PathError>;
 
 pub fn validate(assignments: &[Assignment]) -> ValidationResult {
     check_key_consistency(assignments)?;
@@ -62,10 +53,12 @@ fn check_key_consistency(assignments: &[Assignment]) -> ValidationResult {
                     }
                     Entry::Occupied(occupied) => {
                         if given_segment != *occupied.get() {
-                            Err(SemanticError::InconsistentKeyEscaping {
+                            Err(PathError {
                                 path: given_prefix.clone(),
-                                key1: occupied.get().clone(),
-                                key2: given_segment,
+                                variant: PathErrorVariant::InconsistentKeyEscaping {
+                                    key1: occupied.get().clone(),
+                                    key2: given_segment,
+                                },
                             })?;
                         }
                     }
@@ -85,7 +78,8 @@ fn check_path_uniqueness(assignments: &[Assignment]) -> ValidationResult {
 
     for assignment in assignments {
         if !paths.insert(assignment.path.clone()) {
-            Err(SemanticError::CollidingAssignments {
+            Err(PathError {
+                variant: PathErrorVariant::CollidingAssignments,
                 path: assignment.path.clone(),
             })?;
         }
@@ -118,10 +112,12 @@ fn check_node_types(assignments: &[Assignment]) -> ValidationResult {
 
         match types.entry(path.clone()) {
             Entry::Vacant(vacant) => vacant.insert(NodeKind::Value),
-            Entry::Occupied(occupied) => Err(SemanticError::InconsistentNodeKind {
+            Entry::Occupied(occupied) => Err(PathError {
                 path: path.clone(),
-                kind1: *occupied.get(),
-                kind2: NodeKind::Value,
+                variant: PathErrorVariant::InconsistentNodeKind {
+                    kind1: *occupied.get(),
+                    kind2: NodeKind::Value,
+                },
             })?,
         };
 
@@ -135,10 +131,12 @@ fn check_node_types(assignments: &[Assignment]) -> ValidationResult {
                     vacant.insert(kind);
                 }
                 Entry::Occupied(occupied) if *occupied.get() == kind => {}
-                Entry::Occupied(occupied) => Err(SemanticError::InconsistentNodeKind {
+                Entry::Occupied(occupied) => Err(PathError {
                     path: prefix.clone(),
-                    kind1: *occupied.get(),
-                    kind2: kind,
+                    variant: PathErrorVariant::InconsistentNodeKind {
+                        kind1: *occupied.get(),
+                        kind2: kind,
+                    },
                 })?,
             };
 
@@ -172,20 +170,24 @@ fn check_array_completeness(assignments: &[Assignment]) -> ValidationResult {
         let first = *indices.first().expect("non-empty");
 
         if first != 0 {
-            Err(SemanticError::IncompleteArray {
+            Err(PathError {
                 path: prefix.clone(),
-                index_seen: first,
-                index_missing: 0,
+                variant: PathErrorVariant::IncompleteArray {
+                    index_seen: first,
+                    index_missing: 0,
+                },
             })?;
         }
 
         for pair in indices.windows(2) {
             let [left, right] = pair else { unreachable!() };
             if *left != right - 1 {
-                Err(SemanticError::IncompleteArray {
+                Err(PathError {
                     path: prefix.clone(),
-                    index_seen: *right,
-                    index_missing: left + 1,
+                    variant: PathErrorVariant::IncompleteArray {
+                        index_seen: *right,
+                        index_missing: left + 1,
+                    },
                 })?;
             }
         }
