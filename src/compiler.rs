@@ -38,6 +38,7 @@ pub fn compile<'a>(inputs: impl Iterator<Item = String>) -> CompileResult<Option
 mod tests {
     use super::*;
     use crate::assignment::Path;
+    use crate::parser::SyntaxError::*;
     use crate::parser::parse_path;
     use crate::validator::NodeKind;
     use assert_matches::assert_matches;
@@ -46,6 +47,18 @@ mod tests {
     macro_rules! expect_json {
         ($input:expr, $expected:expr) => {
             assert_eq!(check(&$input).unwrap(), Some($expected.into()));
+        };
+    }
+
+    macro_rules! expect_syntax_error {
+        ($input:expr, $expected:pat_param) => {
+            assert_matches!(
+                check(&$input),
+                Err(CompileError::Syntax {
+                    source: $expected,
+                    ..
+                })
+            );
         };
     }
 
@@ -68,45 +81,21 @@ mod tests {
             #[test]
             fn test_index() {
                 expect_json!(["0:42"], "[42]");
-                assert_matches!(
-                    check(&["00=x"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedCharacter { pos: 2, ch: '0' },
-                        ..
-                    })
-                );
-                assert_matches!(
-                    check(&["01=x"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedCharacter { pos: 2, ch: '1' },
-                        ..
-                    })
-                );
+                expect_syntax_error!(["00=x"], UnexpectedCharacter { pos: 2, ch: '0' });
+                expect_syntax_error!(["01=x"], UnexpectedCharacter { pos: 2, ch: '1' });
             }
 
             #[test]
             fn test_identifier_key() {
                 expect_json!(["foo:42"], r#"{"foo":42}"#);
                 expect_json!(["вишиванка:42"], r#"{"вишиванка":42}"#);
-                assert_matches!(
-                    check(&["foo/bar:42"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedCharacter { pos: 4, ch: '/' },
-                        ..
-                    })
-                );
+                expect_syntax_error!(["foo/bar:42"], UnexpectedCharacter { pos: 4, ch: '/' });
             }
 
             #[test]
             fn test_quoted_key() {
                 expect_json!([r#""foo":42"#], r#"{"foo":42}"#);
-                assert!(matches!(
-                    check(&["\"unterminated"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedEndOfString,
-                        ..
-                    })
-                ));
+                expect_syntax_error!(["\"unterminated"], UnexpectedEndOfString);
                 expect_json!([r#""😀":42"#], r#"{"😀":42}"#);
                 expect_json!([r#""foo.bar":42"#], r#"{"foo.bar":42}"#);
                 expect_json!([r#""foo:bar":42"#], r#"{"foo:bar":42}"#);
@@ -125,27 +114,9 @@ mod tests {
             #[test]
             fn test_key_with_space() {
                 expect_json!([r#"" foo bar ":42"#], r#"{" foo bar ":42}"#);
-                assert_matches!(
-                    check(&[" foobar=true"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedCharacter { pos: 1, ch: ' ' },
-                        ..
-                    })
-                );
-                assert_matches!(
-                    check(&["foo bar:true"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedCharacter { pos: 4, ch: ' ' },
-                        ..
-                    })
-                );
-                assert_matches!(
-                    check(&["foobar :true"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedCharacter { pos: 7, ch: ' ' },
-                        ..
-                    })
-                );
+                expect_syntax_error!([" foobar=true"], UnexpectedCharacter { pos: 1, ch: ' ' });
+                expect_syntax_error!(["foo bar:true"], UnexpectedCharacter { pos: 4, ch: ' ' });
+                expect_syntax_error!(["foobar :true"], UnexpectedCharacter { pos: 7, ch: ' ' });
             }
 
             #[test]
@@ -204,34 +175,10 @@ mod tests {
 
             #[test]
             fn test_empty_segment() {
-                assert_matches!(
-                    check(&[":42"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedCharacter { pos: 1, ch: ':' },
-                        ..
-                    })
-                );
-                assert_matches!(
-                    check(&[".foo:42"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedCharacter { pos: 2, ch: 'f' },
-                        ..
-                    })
-                );
-                assert_matches!(
-                    check(&["foo.:42"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedCharacter { pos: 5, ch: ':' },
-                        ..
-                    })
-                );
-                assert_matches!(
-                    check(&["foo..bar:42"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedCharacter { pos: 5, ch: '.' },
-                        ..
-                    })
-                );
+                expect_syntax_error!([":42"], UnexpectedCharacter { pos: 1, ch: ':' });
+                expect_syntax_error!([".foo:42"], UnexpectedCharacter { pos: 2, ch: 'f' });
+                expect_syntax_error!(["foo.:42"], UnexpectedCharacter { pos: 5, ch: ':' });
+                expect_syntax_error!(["foo..bar:42"], UnexpectedCharacter { pos: 5, ch: '.' });
             }
         }
 
@@ -316,46 +263,22 @@ mod tests {
 
                 #[test]
                 fn test_nan() {
-                    assert_matches!(
-                        check(&[".:NaN"]),
-                        Err(CompileError::Syntax {
-                            source: SyntaxError::InvalidJsonValue { pos: 3, .. },
-                            ..
-                        })
-                    );
+                    expect_syntax_error!([".:NaN"], InvalidJsonValue { pos: 3, .. });
                 }
 
                 #[test]
                 fn test_infinity() {
-                    assert_matches!(
-                        check(&[".:Infinity"]),
-                        Err(CompileError::Syntax {
-                            source: SyntaxError::InvalidJsonValue { pos: 3, .. },
-                            ..
-                        })
-                    );
+                    expect_syntax_error!([".:Infinity"], InvalidJsonValue { pos: 3, .. });
                 }
 
                 #[test]
                 fn test_hex() {
-                    assert_matches!(
-                        check(&[".:0xFF"]),
-                        Err(CompileError::Syntax {
-                            source: SyntaxError::InvalidJsonValue { pos: 3, .. },
-                            ..
-                        })
-                    );
+                    expect_syntax_error!([".:0xFF"], InvalidJsonValue { pos: 3, .. });
                 }
 
                 #[test]
                 fn test_trailing_garbage() {
-                    assert_matches!(
-                        check(&[".:42,"]),
-                        Err(CompileError::Syntax {
-                            source: SyntaxError::UnexpectedCharacter { pos: 5, ch: ',' },
-                            ..
-                        })
-                    );
+                    expect_syntax_error!([".:42,"], UnexpectedCharacter { pos: 5, ch: ',' });
                 }
             }
 
@@ -416,12 +339,9 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_backspace() {
-                        assert_matches!(
-                            check(&["\"\x08\"=x"]),
-                            Err(CompileError::Syntax {
-                                source: SyntaxError::UnexpectedCharacter { pos: 2, ch: '\x08' },
-                                ..
-                            })
+                        expect_syntax_error!(
+                            ["\"\x08\"=x"],
+                            UnexpectedCharacter { pos: 2, ch: '\x08' }
                         );
                         expect_json!([r#".:"\b""#], r#""\b""#);
                         expect_json!([".=\x08"], r#""\b""#);
@@ -430,12 +350,9 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_form_feed() {
-                        assert_matches!(
-                            check(&["\"\x0c\"=x"]),
-                            Err(CompileError::Syntax {
-                                source: SyntaxError::UnexpectedCharacter { pos: 2, ch: '\x0c' },
-                                ..
-                            })
+                        expect_syntax_error!(
+                            ["\"\x0c\"=x"],
+                            UnexpectedCharacter { pos: 2, ch: '\x0c' }
                         );
                         expect_json!([r#".:"\f""#], r#""\f""#);
                         expect_json!([".=\x0c"], r#""\f""#);
@@ -444,12 +361,9 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_line_feed() {
-                        assert_matches!(
-                            check(&["\"\x0a\"=x"]),
-                            Err(CompileError::Syntax {
-                                source: SyntaxError::UnexpectedCharacter { pos: 2, ch: '\x0a' },
-                                ..
-                            })
+                        expect_syntax_error!(
+                            ["\"\x0a\"=x"],
+                            UnexpectedCharacter { pos: 2, ch: '\x0a' }
                         );
                         expect_json!([r#".:"\n""#], r#""\n""#);
                         expect_json!([".=\x0a"], r#""\n""#);
@@ -458,12 +372,9 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_carriage_return() {
-                        assert_matches!(
-                            check(&["\"\x0d\"=x"]),
-                            Err(CompileError::Syntax {
-                                source: SyntaxError::UnexpectedCharacter { pos: 2, ch: '\x0d' },
-                                ..
-                            })
+                        expect_syntax_error!(
+                            ["\"\x0d\"=x"],
+                            UnexpectedCharacter { pos: 2, ch: '\x0d' }
                         );
                         expect_json!([r#".:"\r""#], r#""\r""#);
                         expect_json!([".=\x0d"], r#""\r""#);
@@ -472,12 +383,9 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_tab() {
-                        assert_matches!(
-                            check(&["\"\x09\"=x"]),
-                            Err(CompileError::Syntax {
-                                source: SyntaxError::UnexpectedCharacter { pos: 2, ch: '\x09' },
-                                ..
-                            })
+                        expect_syntax_error!(
+                            ["\"\x09\"=x"],
+                            UnexpectedCharacter { pos: 2, ch: '\x09' }
                         );
                         expect_json!([r#".:"\t""#], r#""\t""#);
                         expect_json!([".=\x09"], r#""\t""#);
@@ -490,12 +398,9 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_nul() {
-                        assert_matches!(
-                            check(&["\"\x00\"=x"]),
-                            Err(CompileError::Syntax {
-                                source: SyntaxError::UnexpectedCharacter { pos: 2, ch: '\x00' },
-                                ..
-                            })
+                        expect_syntax_error!(
+                            ["\"\x00\"=x"],
+                            UnexpectedCharacter { pos: 2, ch: '\x00' }
                         );
                         expect_json!([r#".:"\u0000""#], r#""\u0000""#);
                         expect_json!([".=\x00"], r#""\u0000""#);
@@ -504,12 +409,9 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_etx() {
-                        assert_matches!(
-                            check(&["\"\x04\"=x"]),
-                            Err(CompileError::Syntax {
-                                source: SyntaxError::UnexpectedCharacter { pos: 2, ch: '\x04' },
-                                ..
-                            })
+                        expect_syntax_error!(
+                            ["\"\x04\"=x"],
+                            UnexpectedCharacter { pos: 2, ch: '\x04' }
                         );
                         expect_json!([r#".:"\u0004""#], r#""\u0004""#);
                         expect_json!([".=\x04"], r#""\u0004""#);
@@ -518,12 +420,9 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_syn() {
-                        assert_matches!(
-                            check(&["\"\x16\"=x"]),
-                            Err(CompileError::Syntax {
-                                source: SyntaxError::UnexpectedCharacter { pos: 2, ch: '\x16' },
-                                ..
-                            })
+                        expect_syntax_error!(
+                            ["\"\x16\"=x"],
+                            UnexpectedCharacter { pos: 2, ch: '\x16' }
                         );
                         expect_json!([r#".:"\u0016""#], r#""\u0016""#);
                         expect_json!([".=\x16"], r#""\u0016""#);
@@ -545,12 +444,9 @@ mod tests {
                     #[test]
                     fn test_surrogate_pairs() {
                         expect_json!([r#".:"\ud83d\ude0a""#], r#""\ud83d\ude0a""#);
-                        assert_matches!(
-                            check(&[r#".:"\ud83d.\ude0a""#]),
-                            Err(CompileError::Syntax {
-                                source: SyntaxError::InvalidJsonValue { pos: 3, .. },
-                                ..
-                            })
+                        expect_syntax_error!(
+                            [r#".:"\ud83d.\ude0a""#],
+                            InvalidJsonValue { pos: 3, .. }
                         );
                         expect_json!([".:\"\u{1f60a}\""], "\"\u{1f60a}\"");
                         expect_json!([".=\u{1f60a}"], "\"\u{1f60a}\"");
@@ -572,34 +468,10 @@ mod tests {
 
             #[test]
             fn test_invalid_json_value() {
-                assert_matches!(
-                    check(&[".:hello"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::InvalidJsonValue { pos: 3, .. },
-                        ..
-                    })
-                );
-                assert_matches!(
-                    check(&[".:[1,2,]"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::InvalidJsonValue { pos: 3, .. },
-                        ..
-                    })
-                );
-                assert_matches!(
-                    check(&[".:{foo=42}"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::InvalidJsonValue { pos: 3, .. },
-                        ..
-                    })
-                );
-                assert_matches!(
-                    check(&["\"unterminated"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedEndOfString,
-                        ..
-                    })
-                );
+                expect_syntax_error!([".:hello"], InvalidJsonValue { pos: 3, .. });
+                expect_syntax_error!([".:[1,2,]"], InvalidJsonValue { pos: 3, .. });
+                expect_syntax_error!([".:{foo=42}"], InvalidJsonValue { pos: 3, .. });
+                expect_syntax_error!(["\"unterminated"], UnexpectedEndOfString);
             }
         }
 
@@ -618,20 +490,8 @@ mod tests {
 
             #[test]
             fn test_incomplete_expression() {
-                assert!(matches!(
-                    check(&[""]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedEndOfString,
-                        ..
-                    })
-                ));
-                assert!(matches!(
-                    check(&["foo"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedEndOfString,
-                        ..
-                    })
-                ));
+                expect_syntax_error!([""], UnexpectedEndOfString);
+                expect_syntax_error!(["foo"], UnexpectedEndOfString);
             }
         }
     }
