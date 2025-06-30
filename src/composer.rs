@@ -448,21 +448,15 @@ mod tests {
             #[test]
             fn test_object() {
                 expect_json!([".:{}"], "{}");
-                expect_json!([r#".:{"foo":42}"#], r#"{"foo":42}"#);
+                expect_syntax_error!([r#".:{"foo":42}"#], UnexpectedChar { pos: 4, ch: '"' });
+                expect_syntax_error!([r#".:{ }"#], UnexpectedChar { pos: 4, ch: ' ' });
             }
 
             #[test]
             fn test_array() {
                 expect_json!([".:[]"], "[]");
-                expect_json!([".:[42]"], "[42]");
-            }
-
-            #[test]
-            fn test_invalid_json_value() {
-                expect_syntax_error!([".:hello"], InvalidJsonValue { pos: 3, .. });
-                expect_syntax_error!([".:[1,2,]"], InvalidJsonValue { pos: 3, .. });
-                expect_syntax_error!([".:{foo=42}"], InvalidJsonValue { pos: 3, .. });
-                expect_syntax_error!(["\"unterminated"], UnexpectedEndOfString);
+                expect_syntax_error!([".:[42]"], UnexpectedChar { pos: 4, ch: '4' });
+                expect_syntax_error!([".:[ ]"], UnexpectedChar { pos: 4, ch: ' ' });
             }
         }
 
@@ -685,41 +679,24 @@ mod tests {
 
             #[test]
             #[ignore] // FIXME
-            fn test_inner_whitespace() {
-                expect_json!([".:{ }"], "{}");
-                expect_json!([r#".:{ "foo" : 42 }"#], r#"{"foo":42}"#);
-                expect_json!([".:[ ]"], "{}");
-                expect_json!([r#".:[ 42 , 42 ] }"#], r#"[42,42]"#);
-            }
-
-            #[test]
-            #[ignore] // FIXME
             fn test_sort_object_key() {
                 expect_json!(
-                    [r#".:{"A":"1","B":"2","a":"3","é":4,"€":5}"#],
-                    r#""{"A":"1","B":"2","a":"3","é":4,"€":5}""#
+                    ["A:1", "B:2", "a:3", "é:4", "€:5"],
+                    r#""{"A":1,"B":2,"a":3,"é":4,"€":5}""#
                 );
                 expect_json!(
-                    [r#".:{"cat":1,"catalog":2,"car":3,"can":4}"#],
+                    ["cat:1", "catalog:2", "car:3", "can:4"],
                     r#"{"can":4,"car":3,"cat":1,"catalog":2}"#
                 );
+                expect_json!(["abc:1", "ab:2", "abcd:3"], r#"{"ab":2,"abc":1,"abcd":3}"#);
                 expect_json!(
-                    [r#".:{"abc":1,"ab":2,"abcd":3}"#],
-                    r#"{"ab":2,"abc":1,"abcd":3}"#
-                );
-                expect_json!(
-                    [r#".:{"apple":1,"Ápple":2,"äpple":3,"banana":4}"#],
+                    ["apple:1", "Ápple:2", "äpple:3", "banana:4"],
                     r#"{"apple":1,"banana":4,"Ápple":2,"äpple":3}"#
                 );
                 expect_json!(
-                    [r#".:{"":1,"a":2,"A":3," ":4}"#],
+                    [r#""":1","a:2","A:3",r#"" ":4"#],
                     r#"{"":1," ":4,"A":3,"a":2}"#
                 );
-            }
-
-            #[test]
-            fn test_preserve_array_order() {
-                expect_json!([r#".:["","a","A"," "]"#], r#"["","a","A"," "]"#);
             }
         }
     }

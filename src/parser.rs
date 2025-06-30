@@ -54,11 +54,25 @@ pub enum SyntaxError {
 type ParseResult<'a, T> = Result<(T, usize, &'a str), SyntaxError>;
 
 pub fn validate_json(start_pos: usize, input: &str) -> ParseResult<'_, ()> {
+    if (input.starts_with('{') || input.starts_with('['))
+        && !input.starts_with("{}")
+        && !input.starts_with("[]")
+    {
+        if let Some(ch) = input.chars().nth(1) {
+            Err(SyntaxError::UnexpectedChar {
+                pos: start_pos + 1,
+                ch,
+            })?;
+        } else {
+            Err(SyntaxError::UnexpectedEndOfString)?;
+        }
+    }
+
     let de = Deserializer::from_str(input);
     let mut stream = de.into_iter::<Value>();
 
     match stream.next() {
-        Some(Ok(_value)) => {
+        Some(Ok(_)) => {
             // Position after the valid JSON
             let offset = stream.byte_offset();
 
