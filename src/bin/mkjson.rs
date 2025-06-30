@@ -1,20 +1,20 @@
 use clap::Parser;
-use mkjson::compiler::compile;
+use mkjson::composer::compose;
 use std::process::ExitCode;
 
 /// Construct JSON from paths on the shell
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Builder expressions (e.g., a.b:true c.0.d=foobar)
-    #[arg(id = "ASSIGNMENT")]
-    assignments: Vec<String>,
+    /// Directives (e.g., a.b:true c.0.d=foobar)
+    #[arg(id = "DIRECTIVE")]
+    directives: Vec<String>,
 }
 
 fn main() -> ExitCode {
     let args = Args::parse();
 
-    match compile(args.assignments.into_iter()) {
+    match compose(args.directives.into_iter()) {
         Ok(tree) => {
             if let Some(node) = tree {
                 println!("{}", node);

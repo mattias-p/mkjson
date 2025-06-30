@@ -5,7 +5,7 @@ use unicode_ident::is_xid_continue;
 use unicode_ident::is_xid_start;
 
 #[derive(Debug)]
-pub struct AssignmentAst {
+pub struct DirectiveAst {
     pub path: Vec<SegmentAst>,
     pub operator: OperatorAst,
     pub value: String,
@@ -27,7 +27,7 @@ pub enum SegmentAst {
 #[derive(Debug, Snafu)]
 pub enum SyntaxError {
     #[snafu(display("position {pos}: unexpected character '{ch}'"))]
-    UnexpectedCharacter { pos: usize, ch: char },
+    UnexpectedChar { pos: usize, ch: char },
 
     #[snafu(display("unexpected end of string"))]
     UnexpectedEndOfString,
@@ -65,7 +65,7 @@ pub fn validate_json(start_pos: usize, input: &str) -> ParseResult<'_, ()> {
             // Check for non-whitespace garbage
             let rest = &input[offset..];
             if let Some((end_index, ch)) = rest.char_indices().find(|&(_, c)| !c.is_whitespace()) {
-                Err(SyntaxError::UnexpectedCharacter {
+                Err(SyntaxError::UnexpectedChar {
                     pos: start_pos + offset + end_index,
                     ch,
                 })?;
@@ -80,7 +80,7 @@ pub fn validate_json(start_pos: usize, input: &str) -> ParseResult<'_, ()> {
     }
 }
 
-pub fn parse_assignment(start_pos: usize, input: &str) -> ParseResult<'_, AssignmentAst> {
+pub fn parse_directive(start_pos: usize, input: &str) -> ParseResult<'_, DirectiveAst> {
     let (path, pos, input) = parse_path(start_pos, input)?;
     let (operator, pos, input) = parse_operator(pos, input)?;
 
@@ -89,7 +89,7 @@ pub fn parse_assignment(start_pos: usize, input: &str) -> ParseResult<'_, Assign
     }
 
     Ok((
-        AssignmentAst {
+        DirectiveAst {
             path,
             operator,
             value: input.to_string(),
@@ -180,7 +180,7 @@ pub fn parse_segment(start_pos: usize, input: &str) -> ParseResult<'_, SegmentAs
         })?;
         Ok((SegmentAst::Index(index), start_pos + split_index, rest))
     } else if let Some(first) = input.chars().next() {
-        Err(SyntaxError::UnexpectedCharacter {
+        Err(SyntaxError::UnexpectedChar {
             pos: start_pos,
             ch: first,
         })
@@ -195,7 +195,7 @@ pub fn parse_operator(pos: usize, input: &str) -> ParseResult<OperatorAst> {
     } else if input.starts_with('=') {
         Ok((OperatorAst::EqualSign, pos + 1, &input[1..]))
     } else if let Some(first) = input.chars().next() {
-        Err(SyntaxError::UnexpectedCharacter { pos, ch: first })
+        Err(SyntaxError::UnexpectedChar { pos, ch: first })
     } else {
         Err(SyntaxError::UnexpectedEndOfString)
     }

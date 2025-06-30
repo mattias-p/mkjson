@@ -1,43 +1,43 @@
 use crate::node::Node;
 use crate::node::build_tree;
 use crate::parser::SyntaxError;
-use crate::parser::parse_assignment;
+use crate::parser::parse_directive;
 use crate::validator::PathError;
 use crate::validator::validate;
 use snafu::prelude::*;
 
 #[derive(Debug, Snafu)]
-pub enum CompileError {
-    #[snafu(display("assignment \"{assignment}\": {source}"))]
+pub enum BuildError {
+    #[snafu(display("directive \"{directive}\": {source}"))]
     Syntax {
         source: SyntaxError,
-        assignment: String,
+        directive: String,
     },
 
     #[snafu(display("validating: {source}"))]
     Path { source: PathError },
 }
 
-type CompileResult<T> = Result<T, CompileError>;
+type BuildResult<T> = Result<T, BuildError>;
 
-pub fn compile<'a>(inputs: impl Iterator<Item = String>) -> CompileResult<Option<Node>> {
-    let mut assignments = vec![];
+pub fn compose<'a>(inputs: impl Iterator<Item = String>) -> BuildResult<Option<Node>> {
+    let mut directives = vec![];
     for text in inputs {
-        let (ast, _, _) = parse_assignment(1, &text).context(SyntaxSnafu {
-            assignment: text.escape_default().to_string(),
+        let (ast, _, _) = parse_directive(1, &text).context(SyntaxSnafu {
+            directive: text.escape_default().to_string(),
         })?;
-        assignments.push(ast.into());
+        directives.push(ast.into());
     }
 
-    validate(assignments.as_slice()).context(PathSnafu)?;
+    validate(directives.as_slice()).context(PathSnafu)?;
 
-    Ok(build_tree(assignments.into_iter()))
+    Ok(build_tree(directives.into_iter()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assignment::Path;
+    use crate::directive::Path;
     use crate::parser::SyntaxError::*;
     use crate::parser::parse_path;
     use crate::validator::NodeKind;
@@ -46,16 +46,16 @@ mod tests {
     use std::rc::Rc;
 
     macro_rules! expect_json {
-        ($input:expr, $expected:expr) => {
-            assert_eq!(check(&$input).unwrap(), Some($expected.into()));
+        ($directives:expr, $expected:expr) => {
+            assert_eq!(check(&$directives).unwrap(), Some($expected.into()));
         };
     }
 
     macro_rules! expect_syntax_error {
-        ($input:expr, $expected:pat_param) => {
+        ($directives:expr, $expected:pat_param) => {
             assert_matches!(
-                check(&$input),
-                Err(CompileError::Syntax {
+                check(&$directives),
+                Err(BuildError::Syntax {
                     source: $expected,
                     ..
                 })
@@ -64,10 +64,10 @@ mod tests {
     }
 
     macro_rules! expect_path_error {
-        ($input:expr, $path:expr, $expected:pat_param) => {
+        ($directives:expr, $path:expr, $expected:pat_param) => {
             assert_matches!(
-                check(&$input),
-                Err(CompileError::Path {
+                check(&$directives),
+                Err(BuildError::Path {
                     source: PathError {
                         path,
                         variant: $expected,
@@ -83,9 +83,9 @@ mod tests {
         asts.into_iter().map(|ast| ast.into()).collect()
     }
 
-    fn check(input: &[&str]) -> CompileResult<Option<String>> {
-        let input = input.into_iter().map(|s| s.to_string());
-        compile(input).map(|tree| tree.map(|node| node.to_string()))
+    fn check(directives: &[&str]) -> BuildResult<Option<String>> {
+        let directives = directives.into_iter().map(|s| s.to_string());
+        compose(directives).map(|tree| tree.map(|node| node.to_string()))
     }
 
     mod syntax {
@@ -97,15 +97,15 @@ mod tests {
             #[test]
             fn test_index() {
                 expect_json!(["0:42"], "[42]");
-                expect_syntax_error!(["00=x"], UnexpectedCharacter { pos: 2, ch: '0' });
-                expect_syntax_error!(["01=x"], UnexpectedCharacter { pos: 2, ch: '1' });
+                expect_syntax_error!(["00=x"], UnexpectedChar { pos: 2, ch: '0' });
+                expect_syntax_error!(["01=x"], UnexpectedChar { pos: 2, ch: '1' });
             }
 
             #[test]
-            fn test_identifier_key() {
+            fn test_bare_key() {
                 expect_json!(["foo:42"], r#"{"foo":42}"#);
                 expect_json!(["вишиванка:42"], r#"{"вишиванка":42}"#);
-                expect_syntax_error!(["foo/bar:42"], UnexpectedCharacter { pos: 4, ch: '/' });
+                expect_syntax_error!(["foo/bar:42"], UnexpectedChar { pos: 4, ch: '/' });
             }
 
             #[test]
@@ -130,9 +130,9 @@ mod tests {
             #[test]
             fn test_key_with_space() {
                 expect_json!([r#"" foo bar ":42"#], r#"{" foo bar ":42}"#);
-                expect_syntax_error!([" foobar=true"], UnexpectedCharacter { pos: 1, ch: ' ' });
-                expect_syntax_error!(["foo bar:true"], UnexpectedCharacter { pos: 4, ch: ' ' });
-                expect_syntax_error!(["foobar :true"], UnexpectedCharacter { pos: 7, ch: ' ' });
+                expect_syntax_error!([" foobar=true"], UnexpectedChar { pos: 1, ch: ' ' });
+                expect_syntax_error!(["foo bar:true"], UnexpectedChar { pos: 4, ch: ' ' });
+                expect_syntax_error!(["foobar :true"], UnexpectedChar { pos: 7, ch: ' ' });
             }
 
             #[test]
@@ -149,14 +149,14 @@ mod tests {
             fn test_escaped_control_character_in_error_message() {
                 assert_matches!(
                     check(&["foo.\u{0010}=x"]),
-                    Err(CompileError::Syntax {
-                        source: SyntaxError::UnexpectedCharacter {
+                    Err(BuildError::Syntax {
+                        source: SyntaxError::UnexpectedChar {
                             pos: 5,
                             ch: '\u{0010}'
                         },
-                        assignment,
+                        directive,
                     })
-                    if assignment == "foo.\\u{10}=x"
+                    if directive == "foo.\\u{10}=x"
                 );
             }
         }
@@ -165,7 +165,7 @@ mod tests {
             use super::*;
 
             #[test]
-            fn test_root_assignment() {
+            fn test_root_path() {
                 expect_json!([".:42"], "42");
             }
 
@@ -190,10 +190,10 @@ mod tests {
 
             #[test]
             fn test_empty_segment() {
-                expect_syntax_error!([":42"], UnexpectedCharacter { pos: 1, ch: ':' });
-                expect_syntax_error!([".foo:42"], UnexpectedCharacter { pos: 2, ch: 'f' });
-                expect_syntax_error!(["foo.:42"], UnexpectedCharacter { pos: 5, ch: ':' });
-                expect_syntax_error!(["foo..bar:42"], UnexpectedCharacter { pos: 5, ch: '.' });
+                expect_syntax_error!([":42"], UnexpectedChar { pos: 1, ch: ':' });
+                expect_syntax_error!([".foo:42"], UnexpectedChar { pos: 2, ch: 'f' });
+                expect_syntax_error!(["foo.:42"], UnexpectedChar { pos: 5, ch: ':' });
+                expect_syntax_error!(["foo..bar:42"], UnexpectedChar { pos: 5, ch: '.' });
             }
         }
 
@@ -293,7 +293,7 @@ mod tests {
 
                 #[test]
                 fn test_trailing_garbage() {
-                    expect_syntax_error!([".:42,"], UnexpectedCharacter { pos: 5, ch: ',' });
+                    expect_syntax_error!([".:42,"], UnexpectedChar { pos: 5, ch: ',' });
                 }
             }
 
@@ -354,10 +354,7 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_backspace() {
-                        expect_syntax_error!(
-                            ["\"\x08\"=x"],
-                            UnexpectedCharacter { pos: 2, ch: '\x08' }
-                        );
+                        expect_syntax_error!(["\"\x08\"=x"], UnexpectedChar { pos: 2, ch: '\x08' });
                         expect_json!([r#".:"\b""#], r#""\b""#);
                         expect_json!([".=\x08"], r#""\b""#);
                     }
@@ -365,10 +362,7 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_form_feed() {
-                        expect_syntax_error!(
-                            ["\"\x0c\"=x"],
-                            UnexpectedCharacter { pos: 2, ch: '\x0c' }
-                        );
+                        expect_syntax_error!(["\"\x0c\"=x"], UnexpectedChar { pos: 2, ch: '\x0c' });
                         expect_json!([r#".:"\f""#], r#""\f""#);
                         expect_json!([".=\x0c"], r#""\f""#);
                     }
@@ -376,10 +370,7 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_line_feed() {
-                        expect_syntax_error!(
-                            ["\"\x0a\"=x"],
-                            UnexpectedCharacter { pos: 2, ch: '\x0a' }
-                        );
+                        expect_syntax_error!(["\"\x0a\"=x"], UnexpectedChar { pos: 2, ch: '\x0a' });
                         expect_json!([r#".:"\n""#], r#""\n""#);
                         expect_json!([".=\x0a"], r#""\n""#);
                     }
@@ -387,10 +378,7 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_carriage_return() {
-                        expect_syntax_error!(
-                            ["\"\x0d\"=x"],
-                            UnexpectedCharacter { pos: 2, ch: '\x0d' }
-                        );
+                        expect_syntax_error!(["\"\x0d\"=x"], UnexpectedChar { pos: 2, ch: '\x0d' });
                         expect_json!([r#".:"\r""#], r#""\r""#);
                         expect_json!([".=\x0d"], r#""\r""#);
                     }
@@ -398,10 +386,7 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_tab() {
-                        expect_syntax_error!(
-                            ["\"\x09\"=x"],
-                            UnexpectedCharacter { pos: 2, ch: '\x09' }
-                        );
+                        expect_syntax_error!(["\"\x09\"=x"], UnexpectedChar { pos: 2, ch: '\x09' });
                         expect_json!([r#".:"\t""#], r#""\t""#);
                         expect_json!([".=\x09"], r#""\t""#);
                     }
@@ -413,10 +398,7 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_nul() {
-                        expect_syntax_error!(
-                            ["\"\x00\"=x"],
-                            UnexpectedCharacter { pos: 2, ch: '\x00' }
-                        );
+                        expect_syntax_error!(["\"\x00\"=x"], UnexpectedChar { pos: 2, ch: '\x00' });
                         expect_json!([r#".:"\u0000""#], r#""\u0000""#);
                         expect_json!([".=\x00"], r#""\u0000""#);
                     }
@@ -424,10 +406,7 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_etx() {
-                        expect_syntax_error!(
-                            ["\"\x04\"=x"],
-                            UnexpectedCharacter { pos: 2, ch: '\x04' }
-                        );
+                        expect_syntax_error!(["\"\x04\"=x"], UnexpectedChar { pos: 2, ch: '\x04' });
                         expect_json!([r#".:"\u0004""#], r#""\u0004""#);
                         expect_json!([".=\x04"], r#""\u0004""#);
                     }
@@ -435,10 +414,7 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_syn() {
-                        expect_syntax_error!(
-                            ["\"\x16\"=x"],
-                            UnexpectedCharacter { pos: 2, ch: '\x16' }
-                        );
+                        expect_syntax_error!(["\"\x16\"=x"], UnexpectedChar { pos: 2, ch: '\x16' });
                         expect_json!([r#".:"\u0016""#], r#""\u0016""#);
                         expect_json!([".=\x16"], r#""\u0016""#);
                     }
@@ -490,11 +466,11 @@ mod tests {
             }
         }
 
-        mod assignment {
+        mod directive {
             use super::*;
 
             #[test]
-            fn test_operators() {
+            fn test_assignment_operators() {
                 expect_json!([".=42"], r#""42""#);
                 expect_json!([".:42"], "42");
                 expect_json!(["x=42"], r#"{"x":"42"}"#);
@@ -504,7 +480,7 @@ mod tests {
             }
 
             #[test]
-            fn test_incomplete_expression() {
+            fn test_incomplete_directive() {
                 expect_syntax_error!([""], UnexpectedEndOfString);
                 expect_syntax_error!(["foo"], UnexpectedEndOfString);
             }
@@ -519,21 +495,21 @@ mod tests {
 
             #[test]
             fn test_colliding_root_assignment() {
-                expect_path_error!([".:42", ".:43"], ".", CollidingAssignments);
+                expect_path_error!([".:42", ".:43"], ".", ConflictingDirectives);
             }
 
             #[test]
             fn test_objects() {
-                expect_path_error!(["a:42", "a:42"], "a", CollidingAssignments);
-                expect_path_error!(["a:42", r#""a":42"#], "a", CollidingAssignments);
+                expect_path_error!(["a:42", "a:42"], "a", ConflictingDirectives);
+                expect_path_error!(["a:42", r#""a":42"#], "a", ConflictingDirectives);
             }
 
             #[test]
-            fn test_path_escaping_consistency() {
+            fn test_rfc_8259_string_comparison_should_be_respected() {
                 expect_path_error!(
                     ["a:42", r#""\u0061":42"#],
                     ".",
-                    InconsistentKeyEscaping { .. } // FIXME: check the keys too
+                    InconsistentKeyEncodings { .. } // FIXME: check the encodings too
                 );
 
                 // LATIN SMALL LETTER A WITH DIAERESIS
@@ -557,7 +533,7 @@ mod tests {
 
             #[test]
             fn test_arrays() {
-                expect_path_error!(["0:42", "0:43"], "0", CollidingAssignments);
+                expect_path_error!(["0:42", "0:43"], "0", ConflictingDirectives);
             }
 
             #[test]
@@ -565,7 +541,7 @@ mod tests {
                 expect_path_error!(
                     ["foo.0=x", "foo.bar=y"],
                     "foo",
-                    InconsistentNodeKind {
+                    StructuralConflict {
                         kind1: NodeKind::Array,
                         kind2: NodeKind::Object,
                     }
@@ -573,7 +549,7 @@ mod tests {
                 expect_path_error!(
                     ["foo.bar=x", "foo.0=y"],
                     "foo",
-                    InconsistentNodeKind {
+                    StructuralConflict {
                         kind1: NodeKind::Object,
                         kind2: NodeKind::Array,
                     }
@@ -581,7 +557,7 @@ mod tests {
                 expect_path_error!(
                     ["0=x", "foo=y"],
                     ".",
-                    InconsistentNodeKind {
+                    StructuralConflict {
                         kind1: NodeKind::Array,
                         kind2: NodeKind::Object,
                     }
@@ -589,7 +565,7 @@ mod tests {
                 expect_path_error!(
                     ["foo=x", "0=y"],
                     ".",
-                    InconsistentNodeKind {
+                    StructuralConflict {
                         kind1: NodeKind::Object,
                         kind2: NodeKind::Array,
                     }
@@ -598,7 +574,7 @@ mod tests {
                 expect_path_error!(
                     [".={}", "a=x"],
                     ".",
-                    InconsistentNodeKind {
+                    StructuralConflict {
                         kind1: NodeKind::Value,
                         kind2: NodeKind::Object,
                     }
@@ -606,7 +582,7 @@ mod tests {
                 expect_path_error!(
                     ["a=x", ".={}"],
                     ".",
-                    InconsistentNodeKind {
+                    StructuralConflict {
                         kind1: NodeKind::Object,
                         kind2: NodeKind::Value,
                     }
@@ -614,7 +590,7 @@ mod tests {
                 expect_path_error!(
                     [".=[]", "0=x"],
                     ".",
-                    InconsistentNodeKind {
+                    StructuralConflict {
                         kind1: NodeKind::Value,
                         kind2: NodeKind::Array,
                     }
@@ -622,7 +598,7 @@ mod tests {
                 expect_path_error!(
                     ["0=x", ".=[]"],
                     ".",
-                    InconsistentNodeKind {
+                    StructuralConflict {
                         kind1: NodeKind::Array,
                         kind2: NodeKind::Value,
                     }
@@ -670,7 +646,7 @@ mod tests {
             use super::*;
 
             #[test]
-            fn test_empty_expression_set() {
+            fn test_empty_directive_set() {
                 assert_eq!(check(&[]).unwrap(), None);
             }
 

@@ -1,15 +1,15 @@
-use crate::assignment::Assignment;
-use crate::assignment::Path;
-use crate::assignment::Segment;
+use crate::directive::Directive;
+use crate::directive::Path;
+use crate::directive::Segment;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::rc::Rc;
 
-pub fn build_tree(mut assignments: impl Iterator<Item = Assignment>) -> Option<Node> {
-    if let Some(first) = assignments.next() {
+pub fn build_tree(mut directives: impl Iterator<Item = Directive>) -> Option<Node> {
+    if let Some(first) = directives.next() {
         let mut node = Node::create(&first.path, first.value.clone());
-        for assignment in assignments {
-            node.insert(&assignment.path, assignment.value.clone());
+        for directive in directives {
+            node.insert(&directive.path, directive.value.clone());
         }
         Some(node)
     } else {

@@ -1,5 +1,5 @@
 use clap::Parser;
-use mkjson::compiler::compile;
+use mkjson::composer::compose;
 use mkjson::node::Node;
 use mkjson::parser::is_xid_string;
 use mkjson::parser::validate_json;
@@ -18,15 +18,15 @@ struct Args {
     #[arg(short, long, value_parser = validate_method)]
     method: String,
 
-    /// "params" builder expressions (e.g., a.b:true c.0.d=foobar)
-    #[arg(id = "ASSIGNMENT")]
-    assignments: Vec<String>,
+    /// "params" directives (e.g., a.b:true c.0.d=foobar)
+    #[arg(id = "DIRECTIVE")]
+    directives: Vec<String>,
 }
 
 fn main() -> ExitCode {
     let args = Args::parse();
 
-    match compile(args.assignments.into_iter()) {
+    match compose(args.directives.into_iter()) {
         Ok(tree) => {
             let mut attributes = vec![
                 (

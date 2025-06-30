@@ -1,26 +1,26 @@
-use crate::parser::AssignmentAst;
 use crate::parser::OperatorAst;
 use crate::parser::SegmentAst;
+use crate::parser::DirectiveAst;
 use crate::parser::is_xid_string;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct Assignment {
+pub struct Directive {
     pub path: Rc<Path>,
     pub value: String,
 }
 
-impl From<AssignmentAst> for Assignment {
-    fn from(ast: AssignmentAst) -> Self {
+impl From<DirectiveAst> for Directive {
+    fn from(ast: DirectiveAst) -> Self {
         let path = ast.path.into_iter().map(|segment| segment.into()).collect();
         let value = if ast.operator == OperatorAst::Colon {
             ast.value
         } else {
             escape_string(&ast.value)
         };
-        Assignment { path, value }
+        Directive { path, value }
     }
 }
 

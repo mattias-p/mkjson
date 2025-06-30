@@ -1,6 +1,6 @@
-use crate::assignment::Assignment;
-use crate::assignment::Path;
-use crate::assignment::Segment;
+use crate::directive::Directive;
+use crate::directive::Path;
+use crate::directive::Segment;
 use snafu::prelude::*;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -17,14 +17,17 @@ pub struct PathError {
 
 #[derive(Debug, Snafu)]
 pub enum PathErrorVariant {
-    #[snafu(display("path has equivalent but inconsistently escaped keys {key1} and {key2}"))]
-    InconsistentKeyEscaping { key1: Segment, key2: Segment },
+    #[snafu(display("path has the same key with different encodings {encoding1} and {encoding2}"))]
+    InconsistentKeyEncodings {
+        encoding1: Segment,
+        encoding2: Segment,
+    },
 
-    #[snafu(display("colliding assignments to path"))]
-    CollidingAssignments,
+    #[snafu(display("conflicting directives"))]
+    ConflictingDirectives,
 
     #[snafu(display("path referred to as both {kind1} and {kind2}"))]
-    InconsistentNodeKind { kind1: NodeKind, kind2: NodeKind },
+    StructuralConflict { kind1: NodeKind, kind2: NodeKind },
 
     #[snafu(display("array at path has index {index_seen} but lacks index {index_missing}",))]
     IncompleteArray { index_seen: u32, index_missing: u32 },
@@ -32,17 +35,17 @@ pub enum PathErrorVariant {
 
 type ValidationResult = Result<(), PathError>;
 
-pub fn validate(assignments: &[Assignment]) -> ValidationResult {
-    check_key_consistency(assignments)?;
-    check_path_uniqueness(assignments)?;
-    check_node_types(assignments)?;
-    check_array_completeness(assignments)
+pub fn validate(directives: &[Directive]) -> ValidationResult {
+    check_key_consistency(directives)?;
+    check_path_uniqueness(directives)?;
+    check_node_types(directives)?;
+    check_array_completeness(directives)
 }
 
-fn check_key_consistency(assignments: &[Assignment]) -> ValidationResult {
+fn check_key_consistency(directives: &[Directive]) -> ValidationResult {
     let mut keys: HashMap<Rc<Path>, Segment> = HashMap::new();
-    for assignment in assignments {
-        let mut given_path = assignment.path.clone();
+    for directive in directives {
+        let mut given_path = directive.path.clone();
         let mut normalized_path = given_path.unescape();
 
         while let Some((given_prefix, given_segment)) = given_path.split_last() {
@@ -55,9 +58,9 @@ fn check_key_consistency(assignments: &[Assignment]) -> ValidationResult {
                         if given_segment != *occupied.get() {
                             Err(PathError {
                                 path: given_prefix.clone(),
-                                variant: PathErrorVariant::InconsistentKeyEscaping {
-                                    key1: occupied.get().clone(),
-                                    key2: given_segment,
+                                variant: PathErrorVariant::InconsistentKeyEncodings {
+                                    encoding1: occupied.get().clone(),
+                                    encoding2: given_segment,
                                 },
                             })?;
                         }
@@ -73,14 +76,14 @@ fn check_key_consistency(assignments: &[Assignment]) -> ValidationResult {
     Ok(())
 }
 
-fn check_path_uniqueness(assignments: &[Assignment]) -> ValidationResult {
+fn check_path_uniqueness(directives: &[Directive]) -> ValidationResult {
     let mut paths = HashSet::new();
 
-    for assignment in assignments {
-        if !paths.insert(assignment.path.clone()) {
+    for directive in directives {
+        if !paths.insert(directive.path.clone()) {
             Err(PathError {
-                variant: PathErrorVariant::CollidingAssignments,
-                path: assignment.path.clone(),
+                variant: PathErrorVariant::ConflictingDirectives,
+                path: directive.path.clone(),
             })?;
         }
     }
@@ -104,17 +107,17 @@ impl std::fmt::Display for NodeKind {
     }
 }
 
-fn check_node_types(assignments: &[Assignment]) -> ValidationResult {
+fn check_node_types(directives: &[Directive]) -> ValidationResult {
     let mut types: HashMap<Rc<Path>, NodeKind> = HashMap::new();
 
-    for assignment in assignments {
-        let mut path = assignment.path.clone();
+    for directive in directives {
+        let mut path = directive.path.clone();
 
         match types.entry(path.clone()) {
             Entry::Vacant(vacant) => vacant.insert(NodeKind::Value),
             Entry::Occupied(occupied) => Err(PathError {
                 path: path.clone(),
-                variant: PathErrorVariant::InconsistentNodeKind {
+                variant: PathErrorVariant::StructuralConflict {
                     kind1: *occupied.get(),
                     kind2: NodeKind::Value,
                 },
@@ -133,7 +136,7 @@ fn check_node_types(assignments: &[Assignment]) -> ValidationResult {
                 Entry::Occupied(occupied) if *occupied.get() == kind => {}
                 Entry::Occupied(occupied) => Err(PathError {
                     path: prefix.clone(),
-                    variant: PathErrorVariant::InconsistentNodeKind {
+                    variant: PathErrorVariant::StructuralConflict {
                         kind1: *occupied.get(),
                         kind2: kind,
                     },
@@ -147,11 +150,11 @@ fn check_node_types(assignments: &[Assignment]) -> ValidationResult {
     Ok(())
 }
 
-fn check_array_completeness(assignments: &[Assignment]) -> ValidationResult {
+fn check_array_completeness(directives: &[Directive]) -> ValidationResult {
     let mut arrays: HashMap<Rc<Path>, BTreeSet<u32>> = HashMap::new();
 
-    for assignment in assignments {
-        let mut path = assignment.path.clone();
+    for directive in directives {
+        let mut path = directive.path.clone();
 
         while let Some((ref prefix, segment)) = path.split_last() {
             match segment {
