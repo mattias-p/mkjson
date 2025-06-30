@@ -313,6 +313,50 @@ mod tests {
                 fn test_trailing_zeros() {
                     expect_json!([".:1.00"], "1.00");
                 }
+
+                #[test]
+                fn test_nan() {
+                    assert_matches!(
+                        check(&[".:NaN"]),
+                        Err(CompileError::Syntax {
+                            source: SyntaxError::InvalidJsonValue { pos: 3, .. },
+                            ..
+                        })
+                    );
+                }
+
+                #[test]
+                fn test_infinity() {
+                    assert_matches!(
+                        check(&[".:Infinity"]),
+                        Err(CompileError::Syntax {
+                            source: SyntaxError::InvalidJsonValue { pos: 3, .. },
+                            ..
+                        })
+                    );
+                }
+
+                #[test]
+                fn test_hex() {
+                    assert_matches!(
+                        check(&[".:0xFF"]),
+                        Err(CompileError::Syntax {
+                            source: SyntaxError::InvalidJsonValue { pos: 3, .. },
+                            ..
+                        })
+                    );
+                }
+
+                #[test]
+                fn test_trailing_garbage() {
+                    assert_matches!(
+                        check(&[".:42,"]),
+                        Err(CompileError::Syntax {
+                            source: SyntaxError::UnexpectedCharacter { pos: 5, ch: ',' },
+                            ..
+                        })
+                    );
+                }
             }
 
             mod strings {
@@ -614,6 +658,14 @@ mod tests {
             fn test_objects() {
                 assert_matches!(
                     check(&["foo=x", "foo=y"]),
+                    Err(CompileError::Semantic {
+                        source: SemanticError::CollidingAssignments { path },
+                        ..
+                    })
+                    if path == new_path("foo")
+                );
+                assert_matches!(
+                    check(&["foo=x", r#""foo"=y"#]),
                     Err(CompileError::Semantic {
                         source: SemanticError::CollidingAssignments { path },
                         ..
