@@ -161,8 +161,7 @@ mod tests {
             }
 
             #[test]
-            #[ignore]
-            fn test_unescaped_control_character_quoted_segment() {
+            fn test_unescaped_control_character_in_quoted_segment() {
                 expect_syntax_error!(["\"\x08\"=x"], UnexpectedChar { pos: 2, ch: '\x08' });
                 expect_syntax_error!(["\"\x0c\"=x"], UnexpectedChar { pos: 2, ch: '\x0c' });
                 expect_syntax_error!(["\"\x0a\"=x"], UnexpectedChar { pos: 2, ch: '\x0a' });

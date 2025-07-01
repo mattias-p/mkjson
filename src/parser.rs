@@ -151,15 +151,23 @@ pub fn parse_segment(start_pos: usize, input: &str) -> ParseResult<'_, SegmentAs
                     state = State::Escaped;
                     false
                 } else {
-                    c == '"'
+                    c == '"' || c < ' '
                 }
             })
             .map(|(i, _)| i + 1);
         if let Some(split_index) = split_index {
             let (segment, rest) = input.split_at(split_index);
-            let _: serde_json::Value = serde_json::from_str(segment).context(InvalidKeySnafu {
-                pos: start_pos + split_index,
-            })?;
+            if segment.ends_with('"') {
+                let _: serde_json::Value =
+                    serde_json::from_str(segment).context(InvalidKeySnafu {
+                        pos: start_pos + split_index,
+                    })?;
+            } else {
+                Err(SyntaxError::UnexpectedChar {
+                    pos: start_pos + split_index - 1,
+                    ch: segment.chars().last().unwrap(),
+                })?;
+            }
             Ok((
                 SegmentAst::QuotedKey(segment.to_string()),
                 start_pos + split_index,
