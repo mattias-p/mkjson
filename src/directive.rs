@@ -202,14 +202,38 @@ impl FromIterator<Segment> for Rc<Path> {
     }
 }
 
+fn nibble_to_hex(n: u8) -> char {
+    debug_assert!(n < 16);
+    match n {
+        0..=9 => (b'0' + n) as char,
+        10..=15 => (b'a' + (n - 10)) as char, // use b'A' for uppercase
+        _ => unreachable!(),
+    }
+}
+
 fn escape_string(s: &str) -> String {
     s.chars()
-        .flat_map(|c| {
-            if c == '\\' || c == '"' {
-                vec!['\\', c]
-            } else {
-                vec![c]
+        .flat_map(|c| match c {
+            '\\' | '"' => vec!['\\', c],
+            '\n' => vec!['\\', 'n'],
+            '\r' => vec!['\\', 'r'],
+            '\t' => vec!['\\', 't'],
+            '\x0c' => vec!['\\', 'f'],
+            '\x08' => vec!['\\', 'b'],
+            '\x00'..='\x1f' => {
+                let byte = c as u8;
+                let high_nibble = byte >> 4; // upper 4 bits
+                let low_nibble = byte & 0x0f; // lower 4 bits
+                vec![
+                    '\\',
+                    'u',
+                    '0',
+                    '0',
+                    nibble_to_hex(high_nibble),
+                    nibble_to_hex(low_nibble),
+                ]
             }
+            _ => vec![c],
         })
         .collect()
 }

@@ -364,35 +364,30 @@ mod tests {
                     }
 
                     #[test]
-                    #[ignore] // FIXME
                     fn test_backspace() {
                         expect_json!([r#".:"\b""#], r#""\b""#);
                         expect_json!([".=\x08"], r#""\b""#);
                     }
 
                     #[test]
-                    #[ignore] // FIXME
                     fn test_form_feed() {
                         expect_json!([r#".:"\f""#], r#""\f""#);
                         expect_json!([".=\x0c"], r#""\f""#);
                     }
 
                     #[test]
-                    #[ignore] // FIXME
                     fn test_line_feed() {
                         expect_json!([r#".:"\n""#], r#""\n""#);
                         expect_json!([".=\x0a"], r#""\n""#);
                     }
 
                     #[test]
-                    #[ignore] // FIXME
                     fn test_carriage_return() {
                         expect_json!([r#".:"\r""#], r#""\r""#);
                         expect_json!([".=\x0d"], r#""\r""#);
                     }
 
                     #[test]
-                    #[ignore] // FIXME
                     fn test_tab() {
                         expect_json!([r#".:"\t""#], r#""\t""#);
                         expect_json!([".=\x09"], r#""\t""#);
@@ -403,21 +398,18 @@ mod tests {
                     use super::*;
 
                     #[test]
-                    #[ignore] // FIXME
                     fn test_nul() {
                         expect_json!([r#".:"\u0000""#], r#""\u0000""#);
                         expect_json!([".=\x00"], r#""\u0000""#);
                     }
 
                     #[test]
-                    #[ignore] // FIXME
                     fn test_etx() {
                         expect_json!([r#".:"\u0004""#], r#""\u0004""#);
                         expect_json!([".=\x04"], r#""\u0004""#);
                     }
 
                     #[test]
-                    #[ignore] // FIXME
                     fn test_syn() {
                         expect_json!([r#".:"\u0016""#], r#""\u0016""#);
                         expect_json!([".=\x16"], r#""\u0016""#);
@@ -675,15 +667,14 @@ mod tests {
             #[test]
             #[ignore] // FIXME
             fn test_whitespace_characters() {
-                expect_json!([".:[\x20\x09\x0a\x0d]"], "[]");
+                expect_syntax_error!([".:[\x20\x09\x0a\x0d]"], UnexpectedChar { pos: 4, ch: ' ' });
             }
 
-            // JSON text allows for leading and trailing whitespace.
             #[test]
             #[ignore] // FIXME
             fn test_leading_and_trailing_whitespace() {
-                expect_json!([".: 42"], "[]");
-                expect_json!([".:42 "], "[]");
+                expect_syntax_error!([".:42 "], UnexpectedChar { pos: 5, ch: ' ' });
+                expect_syntax_error!([".: 42"], UnexpectedChar { pos: 3, ch: ' ' });
             }
 
             #[test]
