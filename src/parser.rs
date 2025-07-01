@@ -19,9 +19,9 @@ pub enum OperatorAst {
 
 #[derive(Debug)]
 pub enum SegmentAst {
-    Index(u32),
-    Identifier(String),
-    Key(String),
+    ArrayIndex(u32),
+    BareKey(String),
+    QuotedKey(String),
 }
 
 #[derive(Debug, Snafu)]
@@ -161,7 +161,7 @@ pub fn parse_segment(start_pos: usize, input: &str) -> ParseResult<'_, SegmentAs
                 pos: start_pos + split_index,
             })?;
             Ok((
-                SegmentAst::Key(segment.to_string()),
+                SegmentAst::QuotedKey(segment.to_string()),
                 start_pos + split_index,
                 rest,
             ))
@@ -176,12 +176,12 @@ pub fn parse_segment(start_pos: usize, input: &str) -> ParseResult<'_, SegmentAs
             .unwrap_or_else(|| input.len());
         let (index, rest) = input.split_at(split_index);
         Ok((
-            SegmentAst::Identifier(index.to_string()),
+            SegmentAst::BareKey(index.to_string()),
             start_pos + split_index,
             rest,
         ))
     } else if input.starts_with('0') {
-        Ok((SegmentAst::Index(0), start_pos + 1, &input[1..]))
+        Ok((SegmentAst::ArrayIndex(0), start_pos + 1, &input[1..]))
     } else if input.starts_with(|ch: char| ch.is_ascii_digit()) {
         let split_index = input
             .char_indices()
@@ -192,7 +192,7 @@ pub fn parse_segment(start_pos: usize, input: &str) -> ParseResult<'_, SegmentAs
         let index = index.parse().context(InvalidIndexSnafu {
             pos: start_pos + split_index,
         })?;
-        Ok((SegmentAst::Index(index), start_pos + split_index, rest))
+        Ok((SegmentAst::ArrayIndex(index), start_pos + split_index, rest))
     } else if let Some(first) = input.chars().next() {
         Err(SyntaxError::UnexpectedChar {
             pos: start_pos,

@@ -1,6 +1,6 @@
+use crate::parser::DirectiveAst;
 use crate::parser::OperatorAst;
 use crate::parser::SegmentAst;
-use crate::parser::DirectiveAst;
 use crate::parser::is_xid_string;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
@@ -18,7 +18,7 @@ impl From<DirectiveAst> for Directive {
         let value = if ast.operator == OperatorAst::Colon {
             ast.value
         } else {
-            escape_string(&ast.value)
+            format!(r#""{}""#, escape_string(&ast.value))
         };
         Directive { path, value }
     }
@@ -37,6 +37,13 @@ impl Segment {
             _ => self.clone(),
         }
     }
+
+    pub fn as_unquoted(&self) -> Option<&str> {
+        match self {
+            Segment::Key(key) => Some(&key),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for Segment {
@@ -44,9 +51,11 @@ impl std::fmt::Display for Segment {
         match self {
             Segment::Index(index) => write!(f, "{}", index),
             Segment::Key(key) => {
-                let trimmed = &key[1..key.len() - 1];
-                let key = if is_xid_string(trimmed) { trimmed } else { key };
-                write!(f, "{}", key)
+                if is_xid_string(key) {
+                    write!(f, "{}", key)
+                } else {
+                    write!(f, r#""{}""#, key)
+                }
             }
         }
     }
@@ -55,9 +64,11 @@ impl std::fmt::Display for Segment {
 impl From<SegmentAst> for Segment {
     fn from(ast: SegmentAst) -> Self {
         match ast {
-            SegmentAst::Index(index) => Segment::Index(index),
-            SegmentAst::Key(key) => Segment::Key(Rc::new(key)),
-            SegmentAst::Identifier(identifier) => Segment::Key(Rc::new(escape_string(&identifier))),
+            SegmentAst::ArrayIndex(index) => Segment::Index(index),
+            SegmentAst::QuotedKey(quoted) => {
+                Segment::Key(Rc::new(quoted[1..quoted.len() - 1].to_string()))
+            }
+            SegmentAst::BareKey(bare) => Segment::Key(Rc::new(escape_string(&bare))),
         }
     }
 }
@@ -192,17 +203,14 @@ impl FromIterator<Segment> for Rc<Path> {
 }
 
 fn escape_string(s: &str) -> String {
-    let escaped = s.chars().flat_map(|c| {
-        if c == '\\' || c == '"' {
-            vec!['\\', c]
-        } else {
-            vec![c]
-        }
-    });
-    Some('"')
-        .into_iter()
-        .chain(escaped)
-        .chain(Some('"').into_iter())
+    s.chars()
+        .flat_map(|c| {
+            if c == '\\' || c == '"' {
+                vec!['\\', c]
+            } else {
+                vec![c]
+            }
+        })
         .collect()
 }
 

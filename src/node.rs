@@ -90,9 +90,9 @@ impl std::fmt::Display for Node {
                 write!(f, "{{")?;
                 let mut pairs = object.iter();
                 if let Some((first_key, first_value)) = pairs.next() {
-                    write!(f, "{}:{}", first_key, first_value)?;
+                    write!(f, r#""{}":{}"#, first_key, first_value)?;
                     for (key, value) in pairs {
-                        write!(f, ",{}:{}", key, value)?;
+                        write!(f, r#","{}":{}"#, key, value)?;
                     }
                 }
                 write!(f, "}}")

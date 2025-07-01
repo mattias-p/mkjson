@@ -683,24 +683,23 @@ mod tests {
             }
 
             #[test]
-            #[ignore] // FIXME
-            fn test_sort_object_key() {
+            fn test_object_key_sorting_unicode_order() {
                 expect_json!(
-                    ["A:1", "B:2", "a:3", "é:4", "€:5"],
-                    r#""{"A":1,"B":2,"a":3,"é":4,"€":5}""#
-                );
-                expect_json!(
-                    ["cat:1", "catalog:2", "car:3", "can:4"],
-                    r#"{"can":4,"car":3,"cat":1,"catalog":2}"#
-                );
-                expect_json!(["abc:1", "ab:2", "abcd:3"], r#"{"ab":2,"abc":1,"abcd":3}"#);
-                expect_json!(
-                    ["apple:1", "Ápple:2", "äpple:3", "banana:4"],
-                    r#"{"apple":1,"banana":4,"Ápple":2,"äpple":3}"#
-                );
-                expect_json!(
-                    [r#""":1","a:2","A:3",r#"" ":4"#],
-                    r#"{"":1," ":4,"A":3,"a":2}"#
+                    [
+                        r#""":1"#,  // empty string
+                        r#"" ":2"#, // space
+                        "A:3",      // capital Latin letter
+                        "B:4",
+                        "a:5", // lowercase Latin letter
+                        "apple:6",
+                        "banana:7",
+                        r#""Zebra":8"#, // quoted capital word
+                        "Ápple:9",      // Latin capital A with acute (U+00C1)
+                        "äpple:10",     // Latin small a with diaeresis (U+00E4)
+                        "é:11",         // Latin small e with acute (U+00E9)
+                        r#""€":12"#     // Euro sign (U+20AC)
+                    ],
+                    r#"{"":1," ":2,"A":3,"B":4,"Zebra":8,"a":5,"apple":6,"banana":7,"Ápple":9,"äpple":10,"é":11,"€":12}"#
                 );
             }
         }

@@ -164,6 +164,8 @@ Invalid examples:
 mkjson foo:42 0:43                    ✖ Root node cannot be both object and array
 mkjson foo:42 foo:43                  ✖ Duplicate assignments to the same path
 mkjson '"J":42' '"\u004a":43'         ✖ Duplicate assignments to the same path
+mkjson '"J":42' '"\u004a":43'         ✖ Duplicate assignments to the same path
+mkjson '"😊":42' '"\ud83d\ude0a":43', ✖ Duplicate assignments to the same path
 mkjson '"J".b:42' '"\u004a".b:43'     ✖ Key cannot be both `"J"` and `"\u004a"` in the output
 mkjson '"\u004a":42' '"\u004A".b:43'  ✖ Key cannot be both `"\u004a"` and `"\u004A"` in the output
 mkjson 1:42                           ✖ Array index 0 is undefined
