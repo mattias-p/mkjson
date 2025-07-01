@@ -505,6 +505,11 @@ mod tests {
                     ".",
                     InconsistentKeyEncodings { .. } // FIXME: check the encodings too
                 );
+                expect_path_error!(
+                    [r#""\u006a":42"#, r#""\u006A":42"#],
+                    ".",
+                    InconsistentKeyEncodings { .. } // FIXME: check the encodings too
+                );
 
                 // LATIN SMALL LETTER A WITH DIAERESIS
                 expect_json!(
