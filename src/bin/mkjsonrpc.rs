@@ -6,7 +6,7 @@ use mkjson::parser::validate_json;
 use std::process::ExitCode;
 use std::rc::Rc;
 
-/// Construct JSON-RPC 2.0 from paths on the shell
+/// Command-Line JSON-RPC Composer
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Args {

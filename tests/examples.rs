@@ -81,26 +81,45 @@ fn extract_examples(filename: &str) -> Vec<Example> {
     examples
 }
 
-#[test]
-fn test_readme_examples() {
-    let examples = extract_examples("README.md");
+fn check_examples(filename: &str) {
+    let examples = extract_examples(filename);
 
     assert!(!examples.is_empty(), "No examples found in README.md.");
-    println!("✅ Found {} examples in README.md", examples.len());
+    println!("✅ Found {} examples in {}", examples.len(), filename);
 
     for example in examples {
         let output = compose(example.args.into_iter());
         if let Some(expected) = example.expected {
             assert_eq!(
                 output
-                    .map_err(|e| format!("README.md line {}: {}", example.line_no, e))
+                    .map_err(|e| format!("{} line {}: {}", filename, example.line_no, e))
                     .unwrap()
+                    .ok_or_else(|| format!("{} line {}", filename, example.line_no))
                     .unwrap()
                     .to_string(),
-                expected
+                expected,
+                "{} line {}",
+                filename,
+                example.line_no
             );
         } else {
             assert!(output.is_err());
         }
     }
+}
+
+#[test]
+fn test_directive_syntax_examples() {
+    check_examples("docs/directive-syntax.md");
+}
+
+#[test]
+fn test_directive_mkjson_examples() {
+    check_examples("docs/mkjson.md");
+}
+
+#[test]
+#[ignore]
+fn test_directive_mkjsonrpc_examples() {
+    check_examples("docs/mkjsonrpc.md");
 }
