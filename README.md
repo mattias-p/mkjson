@@ -67,7 +67,9 @@ Use `.` to refer to the root path.
 
 Example:
 
- * `mkjson .:42` → `42`
+```sh
+mkjson .:42 → 42
+```
 
 ### Path segments
 
@@ -115,7 +117,7 @@ mkjson '"foo bar":42'             → {"foo bar":42}
 mkjson '"foo.bar":42'             → {"foo.bar":42}
 mkjson '"foo:bar":42'             → {"foo:bar":42}
 mkjson '"key with \u2600":1'      → {"key with \u2600":1}
-mkjson '""=value'                 → {"":"value"}   # empty string key
+mkjson '""=value'                 → {"":"value"}
 ```
 
 
@@ -152,24 +154,30 @@ Inconsistent or incomplete compositions result in validation errors.
 
 Example:
 
- * `mkjson foo.bar:42 foo.baz=hello` → `{"foo":{"bar":42,"baz":"hello"}}`
+```sh
+mkjson foo.bar:42 foo.baz=hello → {"foo":{"bar":42,"baz":"hello"}}
+```
 
 Invalid examples:
 
- * `mkjson foo:42 0:43`                   ✖ Root node cannot be both object and array
- * `mkjson foo:42 foo:43`                 ✖ Duplicate assignments to the same path
- * `mkjson '"J":42'` '"\u004a":43'        ✖ Duplicate assignments to the same path
- * `mkjson '"J".b:42'` '"\u004a".b:43'    ✖ Key cannot be both `"J"` and `"\u004a"` in the output
- * `mkjson '"\u004a":42'` '"\u004A".b:43' ✖ Key cannot be both `"\u004a"` and `"\u004A"` in the output
- * `mkjson 1:42                           ✖ Array index 0 is undefined
+```sh
+mkjson foo:42 0:43                    ✖ Root node cannot be both object and array
+mkjson foo:42 foo:43                  ✖ Duplicate assignments to the same path
+mkjson '"J":42' '"\u004a":43'         ✖ Duplicate assignments to the same path
+mkjson '"J".b:42' '"\u004a".b:43'     ✖ Key cannot be both `"J"` and `"\u004a"` in the output
+mkjson '"\u004a":42' '"\u004A".b:43'  ✖ Key cannot be both `"\u004a"` and `"\u004A"` in the output
+mkjson 1:42                           ✖ Array index 0 is undefined
+```
 
 
 ## Examples
 
- * `mkjson foo:42` → `{"foo":42}`
- * `mkjson foo.bar=hello` → `{"foo":{"bar":"hello"}}`
- * `mkjson 0:42 1:true` → `[42,true]`
- * `mkjson '.:[]'` → `[]`
+```sh
+mkjson foo:42 → {"foo":42}
+mkjson foo.bar=hello → {"foo":{"bar":"hello"}}
+mkjson 0:42 1:true → [42,true]
+mkjson '.:[]' → []
+```
 
 
 ## Compatibility

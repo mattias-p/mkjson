@@ -12,3 +12,5 @@ unicode-ident = "1.0.18"
 
 [dev-dependencies]
 assert_matches = "1"
+regex = "1.11.1"
+shell-words = "1.0.0"
