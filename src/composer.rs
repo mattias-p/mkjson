@@ -159,6 +159,19 @@ mod tests {
                     if directive == "foo.\\u{10}=x"
                 );
             }
+
+            #[test]
+            #[ignore]
+            fn test_unescaped_control_character_quoted_segment() {
+                expect_syntax_error!(["\"\x08\"=x"], UnexpectedChar { pos: 2, ch: '\x08' });
+                expect_syntax_error!(["\"\x0c\"=x"], UnexpectedChar { pos: 2, ch: '\x0c' });
+                expect_syntax_error!(["\"\x0a\"=x"], UnexpectedChar { pos: 2, ch: '\x0a' });
+                expect_syntax_error!(["\"\x0d\"=x"], UnexpectedChar { pos: 2, ch: '\x0d' });
+                expect_syntax_error!(["\"\x09\"=x"], UnexpectedChar { pos: 2, ch: '\x09' });
+                expect_syntax_error!(["\"\x00\"=x"], UnexpectedChar { pos: 2, ch: '\x00' });
+                expect_syntax_error!(["\"\x04\"=x"], UnexpectedChar { pos: 2, ch: '\x04' });
+                expect_syntax_error!(["\"\x16\"=x"], UnexpectedChar { pos: 2, ch: '\x16' });
+            }
         }
 
         mod path {
@@ -354,7 +367,6 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_backspace() {
-                        expect_syntax_error!(["\"\x08\"=x"], UnexpectedChar { pos: 2, ch: '\x08' });
                         expect_json!([r#".:"\b""#], r#""\b""#);
                         expect_json!([".=\x08"], r#""\b""#);
                     }
@@ -362,7 +374,6 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_form_feed() {
-                        expect_syntax_error!(["\"\x0c\"=x"], UnexpectedChar { pos: 2, ch: '\x0c' });
                         expect_json!([r#".:"\f""#], r#""\f""#);
                         expect_json!([".=\x0c"], r#""\f""#);
                     }
@@ -370,7 +381,6 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_line_feed() {
-                        expect_syntax_error!(["\"\x0a\"=x"], UnexpectedChar { pos: 2, ch: '\x0a' });
                         expect_json!([r#".:"\n""#], r#""\n""#);
                         expect_json!([".=\x0a"], r#""\n""#);
                     }
@@ -378,7 +388,6 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_carriage_return() {
-                        expect_syntax_error!(["\"\x0d\"=x"], UnexpectedChar { pos: 2, ch: '\x0d' });
                         expect_json!([r#".:"\r""#], r#""\r""#);
                         expect_json!([".=\x0d"], r#""\r""#);
                     }
@@ -386,7 +395,6 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_tab() {
-                        expect_syntax_error!(["\"\x09\"=x"], UnexpectedChar { pos: 2, ch: '\x09' });
                         expect_json!([r#".:"\t""#], r#""\t""#);
                         expect_json!([".=\x09"], r#""\t""#);
                     }
@@ -398,7 +406,6 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_nul() {
-                        expect_syntax_error!(["\"\x00\"=x"], UnexpectedChar { pos: 2, ch: '\x00' });
                         expect_json!([r#".:"\u0000""#], r#""\u0000""#);
                         expect_json!([".=\x00"], r#""\u0000""#);
                     }
@@ -406,7 +413,6 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_etx() {
-                        expect_syntax_error!(["\"\x04\"=x"], UnexpectedChar { pos: 2, ch: '\x04' });
                         expect_json!([r#".:"\u0004""#], r#""\u0004""#);
                         expect_json!([".=\x04"], r#""\u0004""#);
                     }
@@ -414,7 +420,6 @@ mod tests {
                     #[test]
                     #[ignore] // FIXME
                     fn test_syn() {
-                        expect_syntax_error!(["\"\x16\"=x"], UnexpectedChar { pos: 2, ch: '\x16' });
                         expect_json!([r#".:"\u0016""#], r#""\u0016""#);
                         expect_json!([".=\x16"], r#""\u0016""#);
                     }
