@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["arbitrary_precision", "raw_value"] }
 snafu = "0.8.6"
 unicode-general-category = "1.0.0"
 unicode-ident = "1.0.18"

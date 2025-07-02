@@ -334,7 +334,6 @@ mod tests {
                 }
 
                 #[test]
-                #[ignore]
                 fn test_beyond_ieee_754_double_precision_range() {
                     expect_json!([".:1e400"], "1e400");
                 }

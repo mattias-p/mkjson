@@ -1,5 +1,6 @@
 use serde_json::Deserializer;
 use serde_json::Value;
+use serde_json::value::RawValue;
 use snafu::prelude::*;
 use unicode_ident::is_xid_continue;
 use unicode_ident::is_xid_start;
@@ -161,10 +162,9 @@ pub fn parse_segment(start_pos: usize, input: &str) -> ParseResult<'_, SegmentAs
         if let Some((char_index, split_index)) = position {
             let (segment, rest) = input.split_at(split_index);
             if segment.ends_with('"') {
-                let _: serde_json::Value =
-                    serde_json::from_str(segment).context(InvalidKeySnafu {
-                        pos: start_pos + char_index,
-                    })?;
+                let _: Box<RawValue> = serde_json::from_str(segment).context(InvalidKeySnafu {
+                    pos: start_pos + char_index,
+                })?;
             } else {
                 Err(SyntaxError::UnexpectedChar {
                     pos: start_pos + char_index,
