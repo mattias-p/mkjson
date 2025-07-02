@@ -1,10 +1,10 @@
 # mkjson – Command-Line JSON Composer
 
 `mkjson` aids exploratory testing of software that accepts JSON input.
-It is designed with precision, correctness, and CLI ergonomics in mind.
+It is designed with precision, correctness, and ergonomics in mind.
 
 The range of successful outputs is exactly the set of valid JSON texts ([RFC 8259]) with
-no unnecessary whitespace and sorted keys.
+sorted keys and no unnecessary whitespace.
 
 ---
 

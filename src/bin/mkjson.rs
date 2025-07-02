@@ -2,7 +2,7 @@ use clap::Parser;
 use mkjson::composer::compose;
 use std::process::ExitCode;
 
-/// Construct JSON from paths on the shell
+/// Command-Line JSON Composer
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
