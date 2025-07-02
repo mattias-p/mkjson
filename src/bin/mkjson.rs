@@ -8,7 +8,7 @@ use std::process::ExitCode;
 struct Args {
     /// Directives (e.g., a.b:true c.0.d=foobar)
     #[arg(id = "DIRECTIVE")]
-    directives: Vec<String>,
+    directives: Vec<Vec<u8>>,
 }
 
 fn main() -> ExitCode {

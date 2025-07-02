@@ -5,9 +5,18 @@ use crate::parser::parse_directive;
 use crate::validator::PathError;
 use crate::validator::validate;
 use snafu::prelude::*;
+use std::str::Utf8Error;
+use unicode_general_category::GeneralCategory;
+use unicode_general_category::get_general_category;
 
 #[derive(Debug, Snafu)]
 pub enum BuildError {
+    #[snafu(display("directive \"{directive}\": {source}"))]
+    Encoding {
+        source: Utf8Error,
+        directive: String,
+    },
+
     #[snafu(display("directive \"{directive}\": {source}"))]
     Syntax {
         source: SyntaxError,
@@ -20,11 +29,58 @@ pub enum BuildError {
 
 type BuildResult<T> = Result<T, BuildError>;
 
-pub fn compose<'a>(inputs: impl Iterator<Item = String>) -> BuildResult<Option<Node>> {
+fn should_escape(c: char) -> bool {
+    matches!(
+        get_general_category(c),
+        GeneralCategory::Control
+            | GeneralCategory::Format
+            | GeneralCategory::Surrogate
+            | GeneralCategory::PrivateUse
+            | GeneralCategory::Unassigned
+    )
+}
+
+fn safe_bytes_display(bytes: &[u8]) -> String {
+    bytes
+        .into_iter()
+        .cloned()
+        .map(|b| match b {
+            b'"' => r#"\""#.to_string(),
+            b'\\' => r#"\\"#.to_string(),
+            b'\x09' => r#"\t"#.to_string(),
+            b'\x0a' => r#"\n"#.to_string(),
+            b'\x0d' => r#"\r"#.to_string(),
+            b'\x20'..=b'\x7e' => format!("{}", char::from(b)),
+            _ => format!("\\x{:02x}", b),
+        })
+        .collect()
+}
+
+fn safe_unicode_display(chars: &str) -> String {
+    chars
+        .chars()
+        .map(|c| {
+            if should_escape(c) {
+                if c <= '\u{ffff}' {
+                    format!("\\u{:04X}", c as u32)
+                } else {
+                    format!("\\U{:08X}", c as u32)
+                }
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
+}
+
+pub fn compose<'a>(inputs: impl Iterator<Item = Vec<u8>>) -> BuildResult<Option<Node>> {
     let mut directives = vec![];
-    for text in inputs {
-        let (ast, _, _) = parse_directive(1, &text).context(SyntaxSnafu {
-            directive: text.escape_default().to_string(),
+    for bytes in inputs {
+        let text = str::from_utf8(&bytes).context(EncodingSnafu {
+            directive: safe_bytes_display(&bytes),
+        })?;
+        let (ast, _, _) = parse_directive(1, text).context(SyntaxSnafu {
+            directive: safe_unicode_display(text),
         })?;
         directives.push(ast.into());
     }
@@ -84,7 +140,7 @@ mod tests {
     }
 
     fn check(directives: &[&str]) -> BuildResult<Option<String>> {
-        let directives = directives.into_iter().map(|s| s.to_string());
+        let directives = directives.into_iter().map(|s| s.bytes().collect());
         compose(directives).map(|tree| tree.map(|node| node.to_string()))
     }
 
@@ -156,7 +212,7 @@ mod tests {
                         },
                         directive,
                     })
-                    if directive == "foo.\\u{10}=x"
+                    if directive == "foo.\\u0010=x"
                 );
             }
 

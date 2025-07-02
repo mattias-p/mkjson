@@ -12,7 +12,7 @@ static NEGATIVE_PATTERN: LazyLock<Regex> =
 
 struct Example {
     line_no: usize,
-    args: Vec<String>,
+    args: Vec<Vec<u8>>,
     expected: Option<String>,
 }
 
@@ -35,6 +35,7 @@ fn extract_examples(filename: &str) -> Vec<Example> {
                     .map_err(|e| format!("{} line {}: error {}", filename, line_no, e))
                     .unwrap()
                     .into_iter()
+                    .map(|s| s.bytes().collect())
                     .collect();
 
                 examples.push(Example {
@@ -57,6 +58,7 @@ fn extract_examples(filename: &str) -> Vec<Example> {
                     .map_err(|e| format!("{} line {}: error {}", filename, line_no, e))
                     .unwrap()
                     .into_iter()
+                    .map(|s| s.bytes().collect())
                     .collect();
 
                 examples.push(Example {

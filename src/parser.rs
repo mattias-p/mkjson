@@ -78,7 +78,9 @@ pub fn validate_json(start_pos: usize, input: &str) -> ParseResult<'_, ()> {
 
             // Check for non-whitespace garbage
             let rest = &input[offset..];
-            if let Some((end_index, ch)) = rest.char_indices().find(|&(_, c)| !c.is_whitespace()) {
+            if let Some((end_index, ch)) =
+                rest.chars().enumerate().find(|&(_, c)| !c.is_whitespace())
+            {
                 Err(SyntaxError::UnexpectedChar {
                     pos: start_pos + offset + end_index,
                     ch,
@@ -140,10 +142,11 @@ pub fn parse_segment(start_pos: usize, input: &str) -> ParseResult<'_, SegmentAs
             Escaped,
         }
         let mut state = State::Normal;
-        let split_index = input
+        let position = input
             .char_indices()
+            .enumerate()
             .skip(1)
-            .find(|&(_, c)| {
+            .find(|&(_, (_, c))| {
                 if state == State::Escaped {
                     state = State::Normal;
                     false
@@ -154,53 +157,55 @@ pub fn parse_segment(start_pos: usize, input: &str) -> ParseResult<'_, SegmentAs
                     c == '"' || c < ' '
                 }
             })
-            .map(|(i, _)| i + 1);
-        if let Some(split_index) = split_index {
+            .map(|(n, (i, _))| (n, i + 1));
+        if let Some((char_index, split_index)) = position {
             let (segment, rest) = input.split_at(split_index);
             if segment.ends_with('"') {
                 let _: serde_json::Value =
                     serde_json::from_str(segment).context(InvalidKeySnafu {
-                        pos: start_pos + split_index,
+                        pos: start_pos + char_index,
                     })?;
             } else {
                 Err(SyntaxError::UnexpectedChar {
-                    pos: start_pos + split_index - 1,
+                    pos: start_pos + char_index,
                     ch: segment.chars().last().unwrap(),
                 })?;
             }
             Ok((
                 SegmentAst::QuotedKey(segment.to_string()),
-                start_pos + split_index,
+                start_pos + char_index,
                 rest,
             ))
         } else {
             Err(SyntaxError::UnexpectedEndOfString)
         }
     } else if input.starts_with(is_xid_start) {
-        let split_index = input
+        let (char_index, split_index) = input
             .char_indices()
-            .find(|&(_, c)| !is_xid_continue(c))
-            .map(|(i, _)| i)
-            .unwrap_or_else(|| input.len());
+            .enumerate()
+            .find(|&(_, (_, c))| !is_xid_continue(c))
+            .map(|(n, (i, _))| (n, i))
+            .unwrap_or_else(|| (input.chars().count(), input.len()));
         let (index, rest) = input.split_at(split_index);
         Ok((
             SegmentAst::BareKey(index.to_string()),
-            start_pos + split_index,
+            start_pos + char_index,
             rest,
         ))
     } else if input.starts_with('0') {
         Ok((SegmentAst::ArrayIndex(0), start_pos + 1, &input[1..]))
     } else if input.starts_with(|ch: char| ch.is_ascii_digit()) {
-        let split_index = input
+        let (char_index, split_index) = input
             .char_indices()
-            .find(|&(_, c)| !c.is_ascii_digit())
-            .map(|(i, _)| i)
-            .unwrap_or_else(|| input.len());
+            .enumerate()
+            .find(|&(_, (_, c))| !c.is_ascii_digit())
+            .map(|(n, (i, _))| (n, i))
+            .unwrap_or_else(|| (input.chars().count(), input.len()));
         let (index, rest) = input.split_at(split_index);
         let index = index.parse().context(InvalidIndexSnafu {
-            pos: start_pos + split_index,
+            pos: start_pos + char_index,
         })?;
-        Ok((SegmentAst::ArrayIndex(index), start_pos + split_index, rest))
+        Ok((SegmentAst::ArrayIndex(index), start_pos + char_index, rest))
     } else if let Some(first) = input.chars().next() {
         Err(SyntaxError::UnexpectedChar {
             pos: start_pos,
