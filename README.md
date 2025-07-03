@@ -1,16 +1,14 @@
-# JSON Composition Tools
+# JSON Construction Toolkit
 
-This repository contains command-line tools for composing JSON and JSON-RPC messages.
+This repository hosts `mkjson` and `mkjsonrpc` — command-line utilities for composing
+structured JSON and JSON-RPC messages.
 
-## Tools
+## Overview
 
-### [`mkjson`](./docs/mkjson.md)
-Compose arbitrary JSON structures using a path-based directive syntax.
+These tools use a shared path-based directive syntax to generate structured data in a
+concise and programmable way.
 
-### [`mkjsonrpc`](./docs/mkjsonrpc.md)
-Compose JSON-RPC 2.0 requests using the same directive syntax to build `params`.
-
-## Shared Syntax
-
-Both tools use the same directive-based syntax for constructing JSON data.
-See [Directive Syntax](./docs/directive-syntax.md) for full details.
+ * [`mkjson`](./docs/reference/mkjson.md): Compose arbitrary JSON structures.
+ * [`mkjsonrpc`](./docs/reference/mkjsonrpc.md): Compose JSON-RPC 2.0 requests.
+ * [Directive Syntax](./docs/reference/directive-syntax.md): Reference for the shared
+   directive-based structure.
