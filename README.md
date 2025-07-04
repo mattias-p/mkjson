@@ -1,4 +1,4 @@
-# JSON Construction Toolkit
+# mkjson
 
 This repository hosts `mkjson` and `mkjsonrpc` — command-line utilities for constructing
 structured JSON and JSON-RPC messages.

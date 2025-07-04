@@ -90,7 +90,7 @@ See [Directive Syntax] for:
 
 ## Output
 
- * Follows the [JSON-RPC 2.0 Specification]
+ * Follows the [JSON-RPC 2.0] specification
  * Fields always included: `jsonrpc`, `method`, `params`
  * Optional field: `id` (when provided)
 
@@ -111,10 +111,10 @@ See the [Directive Syntax] section for examples.
 
  * [mkjson] – base tool for composing raw JSON
  * [Directive Syntax] – path and value composition rules
- * [JSON-RPC 2.0 Specification]
+ * [JSON-RPC 2.0] specification
 
 
 
 [Directive Syntax]: ./directive-syntax.md
-[JSON-RPC 2.0 Specification]: https://www.jsonrpc.org/specification
-[`mkjson`]: ./mkjson.md
+[JSON-RPC 2.0]: https://www.jsonrpc.org/specification
+[mkjson]: ./mkjson.md
