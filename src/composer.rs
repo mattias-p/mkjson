@@ -147,62 +147,40 @@ mod tests {
     mod syntax {
         use super::*;
 
-        mod segment {
+        mod array_index {
             use super::*;
 
             #[test]
-            fn test_index() {
+            fn accept_index_segment() {
                 expect_json!(["0:42"], "[42]");
+            }
+
+            #[test]
+            fn reject_index_segment_with_leading_zeros() {
                 expect_syntax_error!(["00=x"], UnexpectedChar { pos: 2, ch: '0' });
                 expect_syntax_error!(["01=x"], UnexpectedChar { pos: 2, ch: '1' });
             }
+        }
+
+        mod bare_key {
+            use super::*;
 
             #[test]
-            fn test_bare_key() {
+            fn accept_bare_key_segment() {
                 expect_json!(["foo:42"], r#"{"foo":42}"#);
                 expect_json!(["вишиванка:42"], r#"{"вишиванка":42}"#);
+            }
+
+            #[test]
+            fn reject_bare_key_segment_with_special_characters() {
                 expect_syntax_error!(["foo/bar:42"], UnexpectedChar { pos: 4, ch: '/' });
-            }
-
-            #[test]
-            fn test_quoted_key() {
-                expect_json!([r#""foo":42"#], r#"{"foo":42}"#);
-                expect_syntax_error!(["\"unterminated"], UnexpectedEndOfString);
-                expect_json!([r#""😀":42"#], r#"{"😀":42}"#);
-                expect_json!([r#""foo.bar":42"#], r#"{"foo.bar":42}"#);
-                expect_json!([r#""foo:bar":42"#], r#"{"foo:bar":42}"#);
-            }
-
-            #[test]
-            fn test_numeric_key() {
-                expect_json!([r#""0":42"#], r#"{"0":42}"#);
-            }
-
-            #[test]
-            fn test_empty_key() {
-                expect_json!([r#""":42"#], r#"{"":42}"#);
-            }
-
-            #[test]
-            fn test_key_with_space() {
-                expect_json!([r#"" foo bar ":42"#], r#"{" foo bar ":42}"#);
                 expect_syntax_error!([" foobar=true"], UnexpectedChar { pos: 1, ch: ' ' });
                 expect_syntax_error!(["foo bar:true"], UnexpectedChar { pos: 4, ch: ' ' });
                 expect_syntax_error!(["foobar :true"], UnexpectedChar { pos: 7, ch: ' ' });
             }
 
             #[test]
-            fn test_key_with_two_character_escapes() {
-                expect_json!([r#""\b\f\n\r\t\/\\\"":42"#], r#"{"\b\f\n\r\t\/\\\"":42}"#);
-            }
-
-            #[test]
-            fn test_key_with_six_character_escape() {
-                expect_json!([r#""\u2600":42"#], r#"{"\u2600":42}"#);
-            }
-
-            #[test]
-            fn test_escaped_control_character_in_error_message() {
+            fn show_escaped_control_character_in_error_message() {
                 assert_matches!(
                     check(&["foo.\u{0010}=x"]),
                     Err(BuildError::Syntax {
@@ -215,9 +193,34 @@ mod tests {
                     if directive == "foo.\\u0010=x"
                 );
             }
+        }
+
+        mod quoted_key {
+            use super::*;
 
             #[test]
-            fn test_unescaped_control_character_in_quoted_segment() {
+            fn accept_quoted_key_segment() {
+                expect_json!([r#""foo":42"#], r#"{"foo":42}"#);
+                expect_syntax_error!(["\"unterminated"], UnexpectedEndOfString);
+                expect_json!([r#""😀":42"#], r#"{"😀":42}"#);
+                expect_json!([r#""foo.bar":42"#], r#"{"foo.bar":42}"#);
+                expect_json!([r#""foo:bar":42"#], r#"{"foo:bar":42}"#);
+                expect_json!([r#""":42"#], r#"{"":42}"#);
+                expect_json!([r#"" foo bar ":42"#], r#"{" foo bar ":42}"#);
+            }
+
+            #[test]
+            fn accept_two_character_escapes() {
+                expect_json!([r#""\b\f\n\r\t\/\\\"":42"#], r#"{"\b\f\n\r\t\/\\\"":42}"#);
+            }
+
+            #[test]
+            fn accept_six_character_escape() {
+                expect_json!([r#""\u2600":42"#], r#"{"\u2600":42}"#);
+            }
+
+            #[test]
+            fn reject_unescaped_control_character() {
                 expect_syntax_error!(["\"\x08\"=x"], UnexpectedChar { pos: 2, ch: '\x08' });
                 expect_syntax_error!(["\"\x0c\"=x"], UnexpectedChar { pos: 2, ch: '\x0c' });
                 expect_syntax_error!(["\"\x0a\"=x"], UnexpectedChar { pos: 2, ch: '\x0a' });
@@ -233,31 +236,27 @@ mod tests {
             use super::*;
 
             #[test]
-            fn test_root_path() {
+            fn accept_root_path() {
                 expect_json!([".:42"], "42");
             }
 
             #[test]
-            fn test_object_keys() {
+            fn accept_single_segment_paths() {
                 expect_json!(["foo:42"], r#"{"foo":42}"#);
-                expect_json!(["foo.bar.baz:42"], r#"{"foo":{"bar":{"baz":42}}}"#);
+                expect_json!(["0:42"], "[42]");
             }
 
             #[test]
-            fn test_array_indices() {
-                expect_json!(["0:42"], "[42]");
+            fn accept_nested_paths() {
+                expect_json!(["foo.bar.baz:42"], r#"{"foo":{"bar":{"baz":42}}}"#);
                 expect_json!(["0.0:42"], "[[42]]");
                 expect_json!(["0.0.0:42"], "[[[42]]]");
-            }
-
-            #[test]
-            fn test_mixed_segments() {
                 expect_json!(["foo.0:42"], r#"{"foo":[42]}"#);
                 expect_json!(["0.foo:42"], r#"[{"foo":42}]"#);
             }
 
             #[test]
-            fn test_empty_segment() {
+            fn reject_paths_with_unquoted_empty_segments() {
                 expect_syntax_error!([":42"], UnexpectedChar { pos: 1, ch: ':' });
                 expect_syntax_error!([".foo:42"], UnexpectedChar { pos: 2, ch: 'f' });
                 expect_syntax_error!(["foo.:42"], UnexpectedChar { pos: 5, ch: ':' });
@@ -269,17 +268,17 @@ mod tests {
             use super::*;
 
             #[test]
-            fn test_null() {
+            fn accept_null() {
                 expect_json!([".:null"], "null");
             }
 
             #[test]
-            fn test_true() {
+            fn accept_true() {
                 expect_json!([".:true"], "true");
             }
 
             #[test]
-            fn test_false() {
+            fn accept_false() {
                 expect_json!([".:false"], "false");
             }
 
@@ -287,227 +286,203 @@ mod tests {
                 use super::*;
 
                 #[test]
-                fn test_positive_zero() {
+                fn accept_zero_and_preserve_sign() {
                     expect_json!([".:0"], "0");
-                }
-
-                #[test]
-                fn test_negative_zero() {
                     expect_json!([".:-0"], "-0");
                 }
 
                 #[test]
-                fn test_with_fraction() {
+                fn accept_fractions() {
                     expect_json!([".:1.1"], "1.1");
                 }
 
                 #[test]
-                fn test_with_scientific_notation() {
+                fn accept_and_preserve_scientific_notation() {
                     expect_json!([".:6.02e23"], "6.02e23");
                 }
 
                 #[test]
-                fn test_just_within_precision_of_ieee_754_double_precision() {
-                    expect_json!([".:3.141592653589793116"], "3.141592653589793116");
-                }
-
-                #[test]
-                fn test_beyond_precision_of_ieee_754_double_precision() {
-                    expect_json!(
-                        [".:3.141592653589793238462643383279"],
-                        "3.141592653589793238462643383279"
-                    );
-                }
-
-                #[test]
-                fn test_just_within_range_of_ieee_754() {
-                    expect_json!([".:1.7976931348623157e308"], "1.7976931348623157e308");
-                }
-
-                // 2^128
-                #[test]
-                fn test_beyond_precision_of_128_bit_integer() {
-                    expect_json!(
-                        [".:340282366920938463463374607431768211456"],
-                        "340282366920938463463374607431768211456"
-                    );
-                }
-
-                #[test]
-                fn test_beyond_ieee_754_double_precision_range() {
-                    expect_json!([".:1e400"], "1e400");
-                }
-
-                #[test]
-                fn test_trailing_zeros() {
-                    expect_json!([".:1.00"], "1.00");
-                }
-
-                #[test]
-                fn test_nan() {
+                fn reject_nan() {
                     expect_syntax_error!([".:NaN"], InvalidJsonValue { pos: 3, .. });
                 }
 
                 #[test]
-                fn test_infinity() {
+                fn reject_infinity() {
                     expect_syntax_error!([".:Infinity"], InvalidJsonValue { pos: 3, .. });
                 }
 
                 #[test]
-                fn test_hex() {
+                fn reject_hexadecimal_notation() {
                     expect_syntax_error!([".:0xFF"], InvalidJsonValue { pos: 3, .. });
                 }
 
                 #[test]
-                fn test_trailing_garbage() {
+                fn reject_trailing_garbage_after_value() {
+                    expect_syntax_error!([".:null,"], UnexpectedChar { pos: 7, ch: ',' });
+                    expect_syntax_error!([".:null ,"], UnexpectedChar { pos: 8, ch: ',' });
+                    expect_syntax_error!([".:true,"], UnexpectedChar { pos: 7, ch: ',' });
+                    expect_syntax_error!([".:true ,"], UnexpectedChar { pos: 8, ch: ',' });
+                    expect_syntax_error!([".:false,"], UnexpectedChar { pos: 8, ch: ',' });
+                    expect_syntax_error!([".:false ,"], UnexpectedChar { pos: 9, ch: ',' });
                     expect_syntax_error!([".:42,"], UnexpectedChar { pos: 5, ch: ',' });
+                    expect_syntax_error!([".:42 ,"], UnexpectedChar { pos: 6, ch: ',' });
+                    expect_syntax_error!([r#".:"x","#], UnexpectedChar { pos: 6, ch: ',' });
+                    expect_syntax_error!([r#".:"x" ,"#], UnexpectedChar { pos: 7, ch: ',' });
+                    expect_syntax_error!([".:[],"], UnexpectedChar { pos: 5, ch: ',' });
+                    expect_syntax_error!([".:[] ,"], UnexpectedChar { pos: 6, ch: ',' });
+                    expect_syntax_error!([".:{},"], UnexpectedChar { pos: 5, ch: ',' });
+                    expect_syntax_error!([".:{} ,"], UnexpectedChar { pos: 6, ch: ',' });
                 }
             }
 
-            mod strings {
+            mod typed_strings {
                 use super::*;
 
                 #[test]
-                fn test_empty() {
+                fn accept_unescaped_string() {
                     expect_json!([r#".:"""#], r#""""#);
-                    expect_json!([".="], r#""""#);
+                    expect_json!([r#".:"foo""#], r#""foo""#);
+                    expect_json!([r#".:"😀""#], r#""😀""#);
                 }
 
                 #[test]
-                fn test_numeric() {
-                    expect_json!([r#".:"1""#], r#""1""#);
-                    expect_json!([".=1"], r#""1""#);
-                }
-
-                #[test]
-                fn test_equals_operator() {
-                    expect_json!([r#".=foo:bar"#], r#""foo:bar""#);
-                    expect_json!([r#".="quoted""#], r#""\"quoted\"""#);
-                }
-
-                #[test]
-                fn test_basic_multilingual_plane() {
+                fn accept_and_preserve_unicode_escape() {
+                    expect_json!([r#".:"\u0000""#], r#""\u0000""#);
+                    expect_json!([r#".:"\u0041""#], r#""\u0041""#);
+                    expect_json!([r#".:"\u007f""#], r#""\u007f""#);
                     expect_json!([r#".:"\u2600""#], r#""\u2600""#);
-
-                    // U+2600
-                    expect_json!([r#".:"☀""#], r#""☀""#);
-
-                    // U+2600
-                    expect_json!([r#".=☀"#], r#""☀""#);
                 }
 
-                mod two_character_escapes {
-                    use super::*;
-
-                    #[test]
-                    fn test_quotation_mark() {
-                        expect_json!([r#".:"\"""#], r#""\"""#);
-                        expect_json!([r#".=""#], r#""\"""#);
-                    }
-
-                    #[test]
-                    fn test_reverse_solidus() {
-                        expect_json!([r#".:"\\""#], r#""\\""#);
-                        expect_json!([r#".=\"#], r#""\\""#);
-                    }
-
-                    #[test]
-                    fn test_solidus() {
-                        expect_json!([r#".:"/""#], r#""/""#);
-                        expect_json!([r#".:"\/""#], r#""\/""#);
-                        expect_json!([r#".=/"#], r#""/""#);
-                    }
-
-                    #[test]
-                    fn test_backspace() {
-                        expect_json!([r#".:"\b""#], r#""\b""#);
-                        expect_json!([".=\x08"], r#""\b""#);
-                    }
-
-                    #[test]
-                    fn test_form_feed() {
-                        expect_json!([r#".:"\f""#], r#""\f""#);
-                        expect_json!([".=\x0c"], r#""\f""#);
-                    }
-
-                    #[test]
-                    fn test_line_feed() {
-                        expect_json!([r#".:"\n""#], r#""\n""#);
-                        expect_json!([".=\x0a"], r#""\n""#);
-                    }
-
-                    #[test]
-                    fn test_carriage_return() {
-                        expect_json!([r#".:"\r""#], r#""\r""#);
-                        expect_json!([".=\x0d"], r#""\r""#);
-                    }
-
-                    #[test]
-                    fn test_tab() {
-                        expect_json!([r#".:"\t""#], r#""\t""#);
-                        expect_json!([".=\x09"], r#""\t""#);
-                    }
+                #[test]
+                fn accept_and_preserve_escaped_quotation_mark() {
+                    expect_json!([r#".:"\"""#], r#""\"""#);
                 }
 
-                mod six_character_escapes {
-                    use super::*;
+                #[test]
+                fn accept_and_preserve_escaped_reverse_solidus() {
+                    expect_json!([r#".:"\\""#], r#""\\""#);
+                }
 
-                    #[test]
-                    fn test_nul() {
-                        expect_json!([r#".:"\u0000""#], r#""\u0000""#);
-                        expect_json!([".=\x00"], r#""\u0000""#);
-                    }
+                #[test]
+                fn accept_and_preserve_escaped_and_unescaped_solidus() {
+                    expect_json!([r#".:"\/""#], r#""\/""#);
+                    expect_json!([r#".:"/""#], r#""/""#);
+                }
 
-                    #[test]
-                    fn test_etx() {
-                        expect_json!([r#".:"\u0004""#], r#""\u0004""#);
-                        expect_json!([".=\x04"], r#""\u0004""#);
-                    }
+                #[test]
+                fn accept_and_preserve_escaped_backspace() {
+                    expect_json!([r#".:"\b""#], r#""\b""#);
+                }
 
-                    #[test]
-                    fn test_syn() {
-                        expect_json!([r#".:"\u0016""#], r#""\u0016""#);
-                        expect_json!([".=\x16"], r#""\u0016""#);
-                    }
+                #[test]
+                fn accept_and_preserve_escaped_form_feed() {
+                    expect_json!([r#".:"\f""#], r#""\f""#);
+                }
 
-                    #[test]
-                    fn test_del() {
-                        // DEL (U+007F) is not a control character per RFC 8259.
-                        expect_json!([r#".:"\u007f""#], r#""\u007f""#);
-                        expect_json!([".:\"\x7f\""], "\"\x7f\"");
-                        expect_json!([".=\x7f"], "\"\x7f\"");
-                    }
+                #[test]
+                fn accept_and_preserve_escaped_line_feed() {
+                    expect_json!([r#".:"\n""#], r#""\n""#);
+                }
 
-                    // Surrogates are not legal Unicode values (since RFC 3629).
-                    // We assume here that UTF-8 decoding rejects inputs containing surrogates, and
-                    // so we skip testing such strings.
-                    // However, JSON bases its syntax for escaping codepoints beyond the BMP on
-                    // surrogate pairs.
-                    #[test]
-                    fn test_surrogate_pairs() {
-                        expect_json!([r#".:"\ud83d\ude0a""#], r#""\ud83d\ude0a""#);
-                        expect_syntax_error!(
-                            [r#".:"\ud83d.\ude0a""#],
-                            InvalidJsonValue { pos: 3, .. }
-                        );
-                        expect_json!([".:\"\u{1f60a}\""], "\"\u{1f60a}\"");
-                        expect_json!([".=\u{1f60a}"], "\"\u{1f60a}\"");
-                    }
+                #[test]
+                fn accept_and_preserve_escaped_carriage_return() {
+                    expect_json!([r#".:"\r""#], r#""\r""#);
+                }
+
+                #[test]
+                fn accept_and_preserve_escaped_tab() {
+                    expect_json!([r#".:"\t""#], r#""\t""#);
+                }
+
+                #[test]
+                fn accept_and_preserve_unescaped_del() {
+                    // DEL (U+007F) is not a control character per RFC 8259.
+                    expect_json!([".:\"\x7f\""], "\"\x7f\"");
+                }
+            }
+
+            mod string_assignment_operator {
+                use super::*;
+
+                #[test]
+                fn accept_string_assignment() {
+                    expect_json!([".="], r#""""#);
+                    expect_json!([".=😀"], r#""😀""#);
+                    expect_json!([r#".=foo:bar"#], r#""foo:bar""#);
+                }
+
+                #[test]
+                fn escape_quotation_mark_to_preserve_it() {
+                    expect_json!([r#".=""#], r#""\"""#);
+                }
+
+                #[test]
+                fn escape_reverse_solidus_to_preserve_it() {
+                    expect_json!([r#".=\"#], r#""\\""#);
+                }
+
+                #[test]
+                fn avoid_escaping_solidus_even_though_escape_sequence_exists() {
+                    expect_json!([r#".=/"#], r#""/""#);
+                }
+
+                #[test]
+                fn escape_control_character_to_preserve_it() {
+                    expect_json!([".=\x00"], r#""\u0000""#);
+                    expect_json!([".=\x01"], r#""\u0001""#);
+                    expect_json!([".=\x02"], r#""\u0002""#);
+                    expect_json!([".=\x03"], r#""\u0003""#);
+                    expect_json!([".=\x04"], r#""\u0004""#);
+                    expect_json!([".=\x05"], r#""\u0005""#);
+                    expect_json!([".=\x06"], r#""\u0006""#);
+                    expect_json!([".=\x07"], r#""\u0007""#);
+                    expect_json!([".=\x08"], r#""\b""#); // backspace
+                    expect_json!([".=\x09"], r#""\t""#); // tab
+                    expect_json!([".=\x0a"], r#""\n""#); // line feed
+                    expect_json!([".=\x0b"], r#""\u000b""#);
+                    expect_json!([".=\x0c"], r#""\f""#); // form feed
+                    expect_json!([".=\x0d"], r#""\r""#); // carriage return
+                    expect_json!([".=\x0e"], r#""\u000e""#);
+                    expect_json!([".=\x0f"], r#""\u000f""#);
+                    expect_json!([".=\x10"], r#""\u0010""#);
+                    expect_json!([".=\x11"], r#""\u0011""#);
+                    expect_json!([".=\x12"], r#""\u0012""#);
+                    expect_json!([".=\x13"], r#""\u0013""#);
+                    expect_json!([".=\x14"], r#""\u0014""#);
+                    expect_json!([".=\x15"], r#""\u0015""#);
+                    expect_json!([".=\x16"], r#""\u0016""#);
+                    expect_json!([".=\x17"], r#""\u0017""#);
+                    expect_json!([".=\x1b"], r#""\u001b""#);
+                    expect_json!([".=\x1d"], r#""\u001d""#);
+                    expect_json!([".=\x1e"], r#""\u001e""#);
+                    expect_json!([".=\x1f"], r#""\u001f""#);
+                }
+
+                #[test]
+                fn accept_and_preserve_del_character() {
+                    // DEL (U+007F) is not a control character per RFC 8259.
+                    expect_json!([".=\x7f"], "\"\x7f\"");
                 }
             }
 
             #[test]
-            fn test_object() {
+            fn accept_empty_object() {
                 expect_json!([".:{}"], "{}");
-                expect_syntax_error!([r#".:{"foo":42}"#], UnexpectedChar { pos: 4, ch: '"' });
-                expect_syntax_error!([r#".:{ }"#], UnexpectedChar { pos: 4, ch: ' ' });
             }
 
             #[test]
-            fn test_array() {
+            fn reject_non_empty_object() {
+                expect_syntax_error!([r#".:{"foo":42}"#], UnexpectedChar { pos: 4, ch: '"' });
+            }
+
+            #[test]
+            fn accept_empty_array() {
                 expect_json!([".:[]"], "[]");
+            }
+
+            #[test]
+            fn reject_non_empty_array() {
                 expect_syntax_error!([".:[42]"], UnexpectedChar { pos: 4, ch: '4' });
-                expect_syntax_error!([".:[ ]"], UnexpectedChar { pos: 4, ch: ' ' });
             }
         }
 
@@ -515,17 +490,7 @@ mod tests {
             use super::*;
 
             #[test]
-            fn test_assignment_operators() {
-                expect_json!([".=42"], r#""42""#);
-                expect_json!([".:42"], "42");
-                expect_json!(["x=42"], r#"{"x":"42"}"#);
-                expect_json!(["x:42"], r#"{"x":42}"#);
-                expect_json!(["0=42"], r#"["42"]"#);
-                expect_json!(["0:42"], "[42]");
-            }
-
-            #[test]
-            fn test_incomplete_directive() {
+            fn reject_incomplete_directive() {
                 expect_syntax_error!([""], UnexpectedEndOfString);
                 expect_syntax_error!(["foo"], UnexpectedEndOfString);
             }
@@ -535,22 +500,23 @@ mod tests {
     mod semantics {
         use super::*;
 
-        mod validation {
+        mod colliding_assignments {
             use super::*;
 
             #[test]
-            fn test_colliding_root_assignment() {
+            fn reject_conflicting_root_assignments() {
                 expect_path_error!([".:42", ".:43"], ".", ConflictingDirectives);
             }
 
             #[test]
-            fn test_objects() {
+            fn reject_duplicate_object_keys() {
                 expect_path_error!(["a:42", "a:42"], "a", ConflictingDirectives);
                 expect_path_error!(["a:42", r#""a":42"#], "a", ConflictingDirectives);
+                expect_path_error!([r#""a":42"#, r#""a":42"#], "a", ConflictingDirectives);
             }
 
             #[test]
-            fn test_rfc_8259_string_comparison_should_be_respected() {
+            fn reject_ambiguous_escape_encodings() {
                 expect_path_error!(
                     ["a:42", r#""\u0061":42"#],
                     ".",
@@ -561,7 +527,10 @@ mod tests {
                     ".",
                     InconsistentKeyEncodings { .. } // FIXME: check the encodings too
                 );
+            }
 
+            #[test]
+            fn accept_nfc_nfd_nfkc_nfkd_encodings_distinct_keys_per_rfc_8259() {
                 // LATIN SMALL LETTER A WITH DIAERESIS
                 expect_json!(
                     [
@@ -582,12 +551,16 @@ mod tests {
             }
 
             #[test]
-            fn test_arrays() {
+            fn reject_duplicate_array_indices() {
                 expect_path_error!(["0:42", "0:43"], "0", ConflictingDirectives);
             }
+        }
+
+        mod type_conflicts {
+            use super::*;
 
             #[test]
-            fn test_inconsistent_structure() {
+            fn reject_inconsistent_object_and_array_structures() {
                 expect_path_error!(
                     ["foo.0=x", "foo.bar=y"],
                     "foo",
@@ -654,9 +627,13 @@ mod tests {
                     }
                 );
             }
+        }
+
+        mod array_completeness {
+            use super::*;
 
             #[test]
-            fn test_array_completeness() {
+            fn reject_arrays_with_missing_indices() {
                 expect_path_error!(
                     ["1=x"],
                     ".",
@@ -696,21 +673,19 @@ mod tests {
             use super::*;
 
             #[test]
-            fn test_empty_directive_set() {
+            fn return_none_for_empty_directive_set() {
                 assert_eq!(check(&[]).unwrap(), None);
             }
 
             #[test]
-            fn test_objects() {
+            fn merge_distinct_object_keys() {
                 expect_json!(["foo:42", "bar:43"], r#"{"bar":43,"foo":42}"#);
-
                 expect_json!(["0.foo:42", "0.bar:43"], r#"[{"bar":43,"foo":42}]"#);
-
                 expect_json!(["a.foo:42", "a.bar:43"], r#"{"a":{"bar":43,"foo":42}}"#);
             }
 
             #[test]
-            fn test_arrays() {
+            fn merge_complete_and_distinct_array_indices() {
                 expect_json!(["0:42", "1:true"], r#"[42,true]"#);
                 expect_json!(["1.0:42", "1.1:true", "0:{}"], r#"[{},[42,true]]"#);
             }
@@ -721,19 +696,13 @@ mod tests {
 
             #[test]
             #[ignore] // FIXME
-            fn test_whitespace_characters() {
-                expect_syntax_error!([".:[\x20\x09\x0a\x0d]"], UnexpectedChar { pos: 4, ch: ' ' });
+            fn remove_unnecessary_whitespace_in_values() {
+                expect_json!([".: \t\n\r{ \t\n\r} \t\n\r"], "{}");
+                expect_json!([".: \t\n\r[ \t\n\r] \t\n\r"], "[]");
             }
 
             #[test]
-            #[ignore] // FIXME
-            fn test_leading_and_trailing_whitespace() {
-                expect_syntax_error!([".:42 "], UnexpectedChar { pos: 5, ch: ' ' });
-                expect_syntax_error!([".: 42"], UnexpectedChar { pos: 3, ch: ' ' });
-            }
-
-            #[test]
-            fn test_object_key_sorting_unicode_order() {
+            fn sort_object_keys_in_codepoint_order() {
                 expect_json!(
                     [
                         r#""":1"#,  // empty string
@@ -752,6 +721,90 @@ mod tests {
                     r#"{"":1," ":2,"A":3,"B":4,"Zebra":8,"a":5,"apple":6,"banana":7,"Ápple":9,"äpple":10,"é":11,"€":12}"#
                 );
             }
+        }
+
+        mod edge_cases {
+            use super::*;
+
+            mod number_precision {
+                use super::*;
+
+                #[test]
+                fn test_just_within_precision_of_ieee_754_double_precision() {
+                    expect_json!([".:3.141592653589793116"], "3.141592653589793116");
+                }
+
+                #[test]
+                fn test_beyond_precision_of_ieee_754_double_precision() {
+                    expect_json!(
+                        [".:3.141592653589793238462643383279"],
+                        "3.141592653589793238462643383279"
+                    );
+                }
+
+                #[test]
+                fn test_just_within_range_of_ieee_754() {
+                    expect_json!([".:1.7976931348623157e308"], "1.7976931348623157e308");
+                }
+
+                // 2^128
+                #[test]
+                fn test_beyond_precision_of_128_bit_integer() {
+                    expect_json!(
+                        [".:340282366920938463463374607431768211456"],
+                        "340282366920938463463374607431768211456"
+                    );
+                }
+
+                #[test]
+                fn test_beyond_ieee_754_double_precision_range() {
+                    expect_json!([".:1e400"], "1e400");
+                }
+
+                #[test]
+                fn preserve_trailing_zeros() {
+                    expect_json!([".:1.00"], "1.00");
+                }
+            }
+
+            mod unicode_surrogates {
+                use super::*;
+
+                // JSON syntax for escaping codepoints beyond the BMP (basic multilingual plane) is
+                // based on surrogate pairs.
+                #[test]
+                fn accept_and_preserve_escaped_surrogate_pairs() {
+                    expect_json!([r#".:"\ud83d\ude0a""#], r#""\ud83d\ude0a""#);
+                }
+
+                // JSON is based on UTF-8, and surrogate codepoints are illegal in UTF-8.
+                #[test]
+                fn reject_escaped_surrogate_pairs() {
+                    expect_syntax_error!([r#".:"\ud83d.\ude0a""#], InvalidJsonValue { pos: 3, .. });
+                }
+            }
+        }
+    }
+
+    // these are good candidates for howto guides, but deemed redundant in the context of unit
+    // tests.
+    mod howto {
+        use super::*;
+
+        #[test]
+        fn numeric_key() {
+            expect_json!([r#""0":42"#], r#"{"0":42}"#);
+        }
+
+        #[test]
+        fn empty_key() {
+            expect_json!([r#""":42"#], r#"{"":42}"#);
+        }
+
+        #[test]
+        fn numeric_string() {
+            expect_json!([r#".:"1""#], r#""1""#);
+            expect_json!([".=1"], r#""1""#);
         }
     }
 }
